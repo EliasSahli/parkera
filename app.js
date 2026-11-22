@@ -4,6 +4,7 @@ import {
   PAY_APPS, payAppUrl, opensDirectly, shareUrl,
 } from './core.js';
 import { evaluate, fmtDuration } from './rules.js';
+import { initMap, updateMap, openPopupFor } from './map.js';
 import {
   geocode, suggest, reverseGeocode, fetchOsmParkings, fetchGbgParkings, testGbgKey, hasProxy,
 } from './sources.js';
@@ -51,17 +52,14 @@ const state = {
 };
 
 // ---------- Karta ----------
-let map, layer;
+let mapStarted = false;
 function ensureMap() {
-  if (map || !window.L) return;
-  map = L.map('map', { zoomControl: false, attributionControl: true });
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19, attribution: '© OpenStreetMap',
-  }).addTo(map);
-  layer = L.layerGroup().addTo(map);
-}
-function pin(cls, text) {
-  return L.divIcon({ className: '', html: `<div class="pin ${cls}">${text}</div>`, iconSize: [30, 30], iconAnchor: [15, 15] });
+  if (mapStarted) return;
+  mapStarted = true;
+  initMap($('map'), { onSelect: (id) => openPopupFor(id) }).catch((e) => {
+    console.warn('Kartan kunde inte laddas', e);
+    $('map').innerHTML = '<p class="maperr">Kartan kunde inte laddas just nu. Listan nedan fungerar ändå.</p>';
+  });
 }
 
 // ---------- Status ----------
@@ -417,24 +415,30 @@ function renderList() {
 
 function renderMap(nearest, nearestFree) {
   ensureMap();
-  if (!map) return;
-  layer.clearLayers();
   const { dest } = state;
-  const pts = [[dest.lat, dest.lon]];
-  L.marker([dest.lat, dest.lon], { icon: pin('dest', '★'), zIndexOffset: 1000 }).addTo(layer).bindPopup(escapeHtml(dest.label));
-  applyFilters(state.all, currentFilter()).slice(0, 60).forEach((p) => {
-    const highlight = p === nearest || p === nearestFree;
-    const cls = fits(p) ? (p.eval?.cost === 0 ? 'free' : p.fee) : 'unknown';
-    L.marker([p.lat, p.lon], { icon: pin(cls, cls === 'free' ? '0' : 'P'), zIndexOffset: highlight ? 500 : 0 })
-      .addTo(layer)
-      .bindPopup(`<b>${escapeHtml(p.name)}</b><br>${escapeHtml(costText(p))}<br>${formatDistance(p.distance)} från målet<br><a href="${navUrl(settings.navApp, p.lat, p.lon, p.name)}" target="_blank" rel="noopener">Kör hit</a>`);
-    if (highlight) pts.push([p.lat, p.lon]);
+  const fitTo = [[dest.lon, dest.lat]];
+  const parkings = applyFilters(state.all, currentFilter()).slice(0, 80).map((p) => {
+    const focus = p === nearest || p === nearestFree;
+    const ok = fits(p);
+    const free = ok && p.eval?.cost === 0;
+    if (focus) fitTo.push([p.lon, p.lat]);
+    return {
+      p,
+      fits: ok,
+      focus,
+      cls: ok ? (free ? 'free' : p.fee) : 'nofit',
+      label: free ? '0' : 'P',
+    };
   });
-  setTimeout(() => {
-    map.invalidateSize();
-    if (pts.length > 1) map.fitBounds(pts, { padding: [40, 40], maxZoom: 17 });
-    else map.setView(pts[0], 16);
-  }, 50);
+  updateMap({
+    dest,
+    parkings,
+    fitTo,
+    popupHtml: (p) => `<b>${escapeHtml(p.name)}</b><br>${escapeHtml(costText(p))}`
+      + `${p.capacity ? `<br>${p.capacity} platser` : ''}${p.freeSpaces != null ? ` · ${p.freeSpaces} lediga` : ''}`
+      + `<br>${formatDistance(p.distance)} från målet`
+      + `<br><a href="${navUrl(settings.navApp, p.lat, p.lon, p.name)}" target="_blank" rel="noopener">Kör hit</a>`,
+  });
 }
 
 // ---------- Parkeringstid ----------

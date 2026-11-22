@@ -161,7 +161,7 @@ function cacheSet(key, v) {
 
 // Frågar båda speglarna samtidigt och tar det första svaret
 export async function fetchOsmParkings(lat, lon, radius) {
-  const key = `osm:${lat.toFixed(4)},${lon.toFixed(4)},${radius}`;
+  const key = `osm2:${lat.toFixed(4)},${lon.toFixed(4)},${radius}`;
   const hit = cacheGet(key);
   if (hit) return hit;
   const body = 'data=' + encodeURIComponent(buildOverpassQuery(lat, lon, radius));

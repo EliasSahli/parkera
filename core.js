@@ -1,4 +1,5 @@
 // core.js – ren logik utan nätverk eller DOM (testbar i Node)
+import { parseWKT, toWgs84, osmGeometry, centroid } from './geometry.js';
 
 export function haversine(lat1, lon1, lat2, lon2) {
   const R = 6371000;
@@ -27,8 +28,10 @@ const BLOCKED_ACCESS = new Set(['private', 'no', 'permit', 'residents', 'deliver
 export function fromOsm(el) {
   const t = el.tags || {};
   if (t.amenity !== 'parking') return null;
-  const lat = el.lat ?? el.center?.lat;
-  const lon = el.lon ?? el.center?.lon;
+  const geom = osmGeometry(el);
+  const mid = el.center || centroid(geom);
+  const lat = el.lat ?? mid?.lat;
+  const lon = el.lon ?? mid?.lon;
   if (lat == null || lon == null) return null;
   const access = (t.access || 'yes').toLowerCase();
   if (BLOCKED_ACCESS.has(access)) return null;
@@ -59,6 +62,7 @@ export function fromOsm(el) {
     capacity: t.capacity ? parseInt(t.capacity, 10) || null : null,
     freeSpaces: null,
     payCode: t['payment:zone'] || t['zone'] || null,
+    geom,
     access: access === 'customers' ? 'customers' : 'public',
     operator: t.operator || null,
   };
@@ -114,6 +118,7 @@ export function fromGbg(item, kind) {
     operator: item.Owner || defaultOwner,
     extra: item.ExtraInfo || null,
     restriction: item.MaxParkingTimeLimitation || null,
+    geom: item.WKT ? toWgs84(parseWKT(item.WKT), lat, lon) : null,
   };
 }
 
@@ -227,7 +232,7 @@ export function feeLabel(p) {
 }
 
 export function buildOverpassQuery(lat, lon, radius) {
-  return `[out:json][timeout:20];nwr["amenity"="parking"](around:${Math.round(radius)},${lat},${lon});out center tags;`;
+  return `[out:json][timeout:20];nwr["amenity"="parking"](around:${Math.round(radius)},${lat},${lon});out geom;`;
 }
 
 // ---------- Betalning ----------

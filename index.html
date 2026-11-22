@@ -5,13 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Parkera</title>
   <meta name="theme-color" content="#0f1b2d">
+  <meta name="color-scheme" content="light dark">
   <meta name="description" content="Skriv in vart du ska – få närmaste parkering och gratisparkering, och kör dit direkt.">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -79,7 +80,7 @@
     </section>
 
     <footer class="foot">
-      Data: © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-bidragsgivare<span id="gbgCredit" hidden>, Göteborgs Stad</span>.
+      Karta: <a href="https://openfreemap.org">OpenFreeMap</a>. Data: © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-bidragsgivare<span id="gbgCredit" hidden>, Göteborgs Stad</span>.
       Testversion – kontrollera alltid skyltarna på plats.
     </footer>
   </main>
@@ -149,7 +150,7 @@
     <button class="primary wide" id="closePay" type="button">Stäng</button>
   </section>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/maplibre-gl@5.24.1/dist/maplibre-gl.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>

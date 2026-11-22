@@ -1,4 +1,4 @@
-# Parkera – arkitektur (testversion v0.5)
+# Parkera – arkitektur (testversion v0.6)
 
 ## Mål för testversionen
 Skriv in en adress → få tre val → tryck **Kör** → navigeringen startar i Apple Maps / Google Maps / Waze.
@@ -38,7 +38,7 @@ Plus en lista med fler parkeringar som kan filtreras på avstånd och gratis/avg
 | Parkeringsdata v0.1 | OpenStreetMap (Overpass) | Gratis, ingen nyckel, täcker Göteborg, har `fee=yes/no`, `maxstay`, `capacity`. |
 | Kommunal data | Göteborgs ParkingService (valfritt) | Officiell data: gratis tidsparkering på gatan + avgiftsparkering. Kräver APPID. |
 | Beläggning | Visas om datakällan har fältet | Ingen öppen realtidskälla finns; kommer via partneravtal i v2. |
-| Ramverk | Vanilla JS + Leaflet | Inget byggsteg, lätt att ändra, snabb att ladda. |
+| Ramverk | Vanilla JS + MapLibre GL | Inget byggsteg. Vektorkarta från OpenFreeMap (gratis, ingen nyckel), färgsatt som Apple Kartor i mapstyle.js. |
 
 ## Datamodell (internt)
 ```js
@@ -59,6 +59,7 @@ Plus en lista med fler parkeringar som kan filtreras på avstånd och gratis/avg
 - **v0.3** (klar): sökförslag medan man skriver (Photon), resultat visas så fort första källan svarar, Overpass-speglar parallellt + cache, "Jag stannar"-val med kostnadsberäkning, maxtid och P-förbud (rules.js), kort 2 aldrig dubblett.
 - **v0.4** (klar): "Parkera här" (GPS), ankomsttid, betala-knapp med zonkod, delning, Cloudflare Worker (worker/) som håller nyckeln åt alla.
 - **v0.5** (klar): p-hus/anläggningar (PrivateTollParkings) och pendelparkeringar (CommuterParkings) från Göteborgs API; Parkering Göteborg öppnas via iPhone-genväg.
+- **v0.6** (klar): Apple-lik vektorkarta (ljust/mörkt läge), parkeringsytor som gröna konturer (Göteborgs WKT i SWEREF 99, OSM-ytor), mörkt läge för hela appen.
 - **senare**: Cloudflare Worker som cache/proxy så att användare inte behöver egen nyckel.
 - **v0.3**: Avgiftstider/zoner → korrekt "gratis just nu".
 - **v1**: Beläggning via operatörspartner, betalning via partner-API, ev. native app (CarPlay/Android Auto).

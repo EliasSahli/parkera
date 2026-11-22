@@ -191,3 +191,74 @@ button.ghost.wide { width: 100%; height: 44px; }
 .howto summary { font-weight: 600; cursor: pointer; }
 .howto ol { margin: 8px 0 6px; padding-left: 20px; display: grid; gap: 4px; }
 .tag.kind { background: #eef1f5; color: var(--ink); }
+
+/* ---------- Karta (MapLibre) ---------- */
+.map { height: 340px; position: relative; background: var(--bg); }
+.map .maplibregl-ctrl-attrib { font-size: 10px; }
+.maperr { padding: 20px; color: var(--muted); text-align: center; }
+
+/* Nålar i Apple-/Parkering Göteborg-stil (droppform) */
+.mpin-wrap { background: none; border: 0; padding: 0 0 6px; cursor: pointer; display: block; }
+.mpin-wrap.focus { z-index: 3; }
+.mdest-wrap { z-index: 4; }
+.mpin {
+  width: 32px; height: 32px; padding: 0; border: 2px solid #fff;
+  border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+  display: grid; place-items: center; box-shadow: 0 2px 6px rgba(0,0,0,.35);
+  background: #2fb34f;
+}
+.mpin span { transform: rotate(45deg); color: #fff; font-weight: 800; font-size: 14px; line-height: 1; }
+.mpin.free { background: #2fb34f; }
+.mpin.paid { background: #e8a317; }
+.mpin.unknown { background: #8e95a3; }
+.mpin.nofit { background: #8e95a3; opacity: .75; }
+.mpin.focus { width: 38px; height: 38px; z-index: 2; box-shadow: 0 0 0 3px rgba(10,132,255,.45), 0 2px 8px rgba(0,0,0,.4); }
+.mpin.focus span { font-size: 16px; }
+
+/* Mål: röd nål som i Apple Kartor */
+.mdest-wrap { padding-bottom: 5px; }
+.mdest {
+  width: 30px; height: 30px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+  background: #ff3b30; border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.35); position: relative;
+}
+.mdest::after { content: ''; position: absolute; inset: 9px; border-radius: 50%; background: #fff; }
+
+/* Min position: blå prick med puls */
+.mdot { width: 18px; height: 18px; border-radius: 50%; background: #0a84ff; border: 3px solid #fff; box-shadow: 0 0 0 0 rgba(10,132,255,.5); animation: pulse 2s infinite; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(10,132,255,.5); } 70% { box-shadow: 0 0 0 16px rgba(10,132,255,0); } 100% { box-shadow: 0 0 0 0 rgba(10,132,255,0); } }
+
+.maplibregl-popup-content { border-radius: 12px; padding: 10px 12px; font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: var(--card); box-shadow: 0 6px 20px rgba(0,0,0,.25); }
+.maplibregl-popup-tip { border-top-color: var(--card) !important; border-bottom-color: var(--card) !important; }
+
+/* ---------- Mörkt läge (följer telefonen, som Apple Kartor) ---------- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000000;
+    --card: #1c1c1e;
+    --ink: #f2f2f7;
+    --muted: #98989f;
+    --line: #38383a;
+    --brand: #1c1c1e;
+    --go: #0a84ff;
+    --free: #30d158;
+    --free-bg: #12301b;
+    --paid: #ffcc66;
+    --paid-bg: #3a2e12;
+    --unk-bg: #2c2c2e;
+  }
+  .top { background: #1c1c1e; border-bottom: 1px solid var(--line); }
+  .search input, .sheet select, .sheet input { background: #1c1c1e; color: var(--ink); border-color: var(--line); }
+  button.pay, button.ghost, button.here, .chips button, .seg button.on { background: #2c2c2e; color: var(--ink); }
+  button.ghost { color: var(--go); border-color: var(--go); }
+  .chips button.on { background: #f2f2f7; color: #000; border-color: #f2f2f7; }
+  .seg { background: #000; }
+  .suggestions li.on, .suggestions li:hover { background: #2c2c2e; }
+  .suggestions li .k { background: #2c2c2e; }
+  .opt.dest-opt .ico { background: #0a2a4d; }
+  .tag.cust { background: #33224a; color: #d6b8ff; }
+  .tag.occ, .tag.gbg { background: #10294a; color: #8fc1ff; }
+  .tag.bad { background: #3d1614; color: #ff8a80; }
+  .tag.kind { background: #2c2c2e; color: var(--ink); }
+  .zone, .howto { background: #2c2c2e; }
+  .opt, .list li, .filters, .map { box-shadow: 0 0 0 1px var(--line); }
+}
