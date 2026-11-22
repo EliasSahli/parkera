@@ -1,8 +1,9 @@
 // app.js – UI och flöde
 import {
-  prepare, pickOptions, applyFilters, navUrl, feeLabel, formatDistance, walkMinutes,
+  prepare, pickOptions, applyFilters, navUrl, feeLabel, formatDistance, walkMinutes, fits,
 } from './core.js';
-import { geocode, fetchOsmParkings, fetchGbgParkings, testGbgKey } from './sources.js';
+import { evaluate, fmtDuration } from './rules.js';
+import { geocode, suggest, fetchOsmParkings, fetchGbgParkings, testGbgKey } from './sources.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -19,7 +20,6 @@ const settings = {
 };
 
 // Nyckel via länk: öppna .../?appid=DIN-NYCKEL en gång på en ny enhet så sparas den där.
-// Nyckeln tas sedan bort ur adressfältet.
 try {
   const params = new URLSearchParams(location.search);
   const fromUrl = (params.get('appid') || '').trim();
@@ -32,7 +32,16 @@ try {
   }
 } catch { /* ignorera */ }
 
-const state = { dest: null, all: [], maxDist: store.get('maxDist', 800), fee: 'all' };
+const state = {
+  dest: null,
+  all: [],
+  maxDist: store.get('maxDist', 800),
+  fee: 'all',
+  dur: store.get('dur', 120),
+  onlyFits: store.get('onlyFits', true),
+  req: 0,
+  loading: false,
+};
 
 // ---------- Karta ----------
 let map, layer;
@@ -60,89 +69,202 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-// ---------- Sök ----------
+// ---------- Sök med förslag medan man skriver ----------
+const input = $('q');
+const sugBox = $('suggestions');
+let sugItems = [];
+let sugActive = -1;
+let sugTimer = null;
+let sugCtrl = null;
+
+input.addEventListener('input', () => {
+  clearTimeout(sugTimer);
+  const q = input.value.trim();
+  if (q.length < 2) { q.length ? hideSuggestions() : showRecentAsSuggestions(); return; }
+  sugTimer = setTimeout(() => runSuggest(q), 180);
+});
+input.addEventListener('focus', () => {
+  if (!input.value.trim()) showRecentAsSuggestions();
+  else if (sugItems.length) sugBox.hidden = false;
+});
+input.addEventListener('blur', () => setTimeout(hideSuggestions, 150));
+input.addEventListener('keydown', (e) => {
+  if (sugBox.hidden || !sugItems.length) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const n = sugItems.length;
+    sugActive = (sugActive + (e.key === 'ArrowDown' ? 1 : -1) + n) % n;
+    paintActive();
+  } else if (e.key === 'Escape') {
+    hideSuggestions();
+  }
+});
+
+async function runSuggest(q) {
+  sugCtrl?.abort();
+  sugCtrl = new AbortController();
+  const mine = sugCtrl;
+  try {
+    const hits = await suggest(q, mine.signal);
+    if (mine !== sugCtrl || input.value.trim() !== q) return; // gammalt svar
+    showSuggestions(hits, q);
+  } catch (err) {
+    if (err.name !== 'AbortError') console.warn('Förslag misslyckades', err);
+  }
+}
+
+function showSuggestions(hits, q = '') {
+  sugItems = hits;
+  sugActive = hits.length ? 0 : -1;
+  sugBox.innerHTML = '';
+  if (!hits.length) {
+    sugBox.innerHTML = `<li class="none">Inga förslag – tryck Sök för att söka bredare</li>`;
+    sugBox.hidden = !q;
+    return;
+  }
+  hits.forEach((h, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span class="k">${h.kind || '🕘'}</span><span class="tx"><b>${highlight(h.title || h.label, q)}</b>${h.sub ? `<small>${escapeHtml(h.sub)}</small>` : ''}</span>`;
+    // pointerdown hinner före blur – annars stängs listan innan klicket registreras
+    li.addEventListener('pointerdown', (e) => { e.preventDefault(); pick(i); });
+    sugBox.appendChild(li);
+  });
+  paintActive();
+  sugBox.hidden = false;
+}
+function paintActive() {
+  [...sugBox.children].forEach((li, i) => li.classList.toggle('on', i === sugActive));
+}
+function highlight(text, q) {
+  const t = escapeHtml(text);
+  if (!q) return t;
+  const i = text.toLowerCase().indexOf(q.toLowerCase());
+  if (i < 0) return t;
+  return escapeHtml(text.slice(0, i)) + '<u>' + escapeHtml(text.slice(i, i + q.length)) + '</u>' + escapeHtml(text.slice(i + q.length));
+}
+function pick(i) {
+  const h = sugItems[i];
+  if (!h) return;
+  hideSuggestions();
+  input.blur();
+  chooseDest(h);
+}
+function hideSuggestions() { sugBox.hidden = true; }
+function showRecentAsSuggestions() {
+  const recent = store.get('recent', []).map((r) => ({ ...r, title: r.label.split(',')[0], sub: r.label.split(',').slice(1).join(',').trim(), kind: '🕘' }));
+  if (recent.length) showSuggestions(recent);
+  else hideSuggestions();
+}
+
 $('searchForm').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const q = $('q').value.trim();
+  const q = input.value.trim();
   if (!q) return;
-  $('q').blur();
+  if (!sugBox.hidden && sugItems.length && sugActive >= 0) return pick(sugActive);
+  // Inga förslag ännu – gör en bredare sökning
+  clearTimeout(sugTimer);
+  input.blur();
   hideSuggestions();
   status('Söker adress…', { spin: true });
   try {
     const hits = await geocode(q);
     if (!hits.length) return status('Hittade ingen adress. Prova att lägga till stad, t.ex. "…, Göteborg".', { err: true });
     if (hits.length === 1) return chooseDest(hits[0]);
-    showSuggestions(hits);
     status('');
+    showSuggestions(hits.map((h) => ({ ...h, title: h.label, sub: h.full, kind: '📍' })));
   } catch (err) {
     console.error(err);
     status('Adressökningen svarar inte just nu. Försök igen om en stund.', { err: true });
   }
 });
 
-function showSuggestions(hits) {
-  const ul = $('suggestions');
-  ul.innerHTML = '';
-  hits.forEach((h) => {
-    const li = document.createElement('li');
-    li.innerHTML = `${escapeHtml(h.label)}<small>${escapeHtml(h.full)}</small>`;
-    li.addEventListener('click', () => { hideSuggestions(); chooseDest(h); });
-    ul.appendChild(li);
-  });
-  ul.hidden = false;
-}
-function hideSuggestions() { $('suggestions').hidden = true; }
-
+// ---------- Hämta parkeringar (visar första källan direkt, fyller på med resten) ----------
 async function chooseDest(dest) {
+  const req = ++state.req;
   state.dest = dest;
-  $('q').value = dest.label;
+  state.all = [];
+  input.value = dest.label;
   saveRecent(dest);
   status('Letar parkeringar runt ' + dest.label + '…', { spin: true });
-  $('results').hidden = true;
 
   const radius = Number(settings.radius) || 1500;
-  const [osm, gbg] = await Promise.allSettled([
-    fetchOsmParkings(dest.lat, dest.lon, radius),
-    fetchGbgParkings(settings.appId, dest.lat, dest.lon, radius),
-  ]);
+  const parts = { osm: null, gbg: null };
+  let pending = 2;
+  let errors = 0;
 
-  const osmItems = osm.status === 'fulfilled' ? osm.value : [];
-  const gbgRes = gbg.status === 'fulfilled' ? gbg.value : { items: [], ok: false, reason: String(gbg.reason) };
-  $('gbgCredit').hidden = !gbgRes.items.length;
-  if (settings.appId) {
-    setGbgState(gbgRes.ok
-      ? [`Kopplad till Göteborgs Stad – ${gbgRes.items.length} platser vid senaste sökningen.`, 'ok']
-      : [`Göteborgs Stad svarade inte (${gbgRes.reason}). Appen använder bara OpenStreetMap.`, 'bad']);
-  }
+  const merge = () => {
+    if (req !== state.req) return; // användaren har hunnit söka något annat
+    state.all = prepare([...(parts.osm || []), ...(parts.gbg || [])], dest);
+    state.loading = pending > 0;
+    if (state.all.length || pending === 0) render();
+    if (pending > 0) status(state.all.length ? 'Hämtar fler parkeringar…' : 'Letar parkeringar runt ' + dest.label + '…', { spin: true });
+    else if (!state.all.length && errors === 2) status('Kunde inte hämta parkeringsdata just nu. Försök igen om en stund.', { err: true });
+    else status('');
+  };
 
-  if (osm.status === 'rejected' && !gbgRes.items.length) {
-    console.error(osm.reason);
-    status('Kunde inte hämta parkeringsdata just nu. Försök igen om en stund.', { err: true });
-    return;
-  }
+  fetchOsmParkings(dest.lat, dest.lon, radius)
+    .then((items) => { parts.osm = items; })
+    .catch((e) => { console.warn(e); errors++; })
+    .finally(() => { pending--; merge(); });
 
-  state.all = prepare([...osmItems, ...gbgRes.items], dest);
-  status('');
-  render();
+  fetchGbgParkings(settings.appId, dest.lat, dest.lon, radius)
+    .then((res) => {
+      parts.gbg = res.items;
+      $('gbgCredit').hidden = !res.items.length;
+      if (settings.appId) {
+        setGbgState(res.ok
+          ? [`Kopplad till Göteborgs Stad – ${res.items.length} platser vid senaste sökningen.`, 'ok']
+          : [`Göteborgs Stad svarade inte (${res.reason}). Appen använder bara OpenStreetMap.`, 'bad']);
+      }
+      if (!res.ok) errors++;
+    })
+    .catch((e) => { console.warn(e); errors++; })
+    .finally(() => { pending--; merge(); });
+}
+
+// ---------- Bedömning för vald parkeringstid ----------
+function evaluateAll() {
+  const start = new Date();
+  state.all.forEach((p) => { p.eval = evaluate(p, start, state.dur); });
+}
+
+function costText(p) {
+  const e = p.eval;
+  const d = fmtDuration(state.dur);
+  if (!e) return feeLabel(p);
+  if (!e.ok) return `Passar inte: ${e.reason}`;
+  if (e.cost === 0) return `${d}: gratis`;
+  if (e.cost != null) return `${d}: ${e.approx ? 'ca ' : ''}${e.cost} kr`;
+  if (p.fee === 'paid') return 'Avgift (pris okänt)';
+  return 'Avgift okänd';
+}
+function costClass(p) {
+  const e = p.eval;
+  if (e && !e.ok) return 'bad';
+  if (e?.cost === 0 || p.fee === 'free') return 'free';
+  if (p.fee === 'paid') return 'paid';
+  return 'unknown';
 }
 
 // ---------- Rendering ----------
 function render() {
   const { dest, all } = state;
+  evaluateAll();
   $('results').hidden = false;
   $('destLabel').textContent = 'Mål: ' + dest.label;
 
-  const { nearest, nearestFree } = pickOptions(all);
+  const { nearest, nearestFree, nearestTitle } = pickOptions(all);
+  const wait = state.loading ? 'Söker…' : null;
   const opts = $('options');
   opts.innerHTML = '';
   opts.append(
     optionCard('dest-opt', '➜', 'Till målet', dest.label, 'Kör direkt till adressen', dest),
     nearest
-      ? optionCard('near', 'P', 'Närmaste parkering', nearest.name, metaLine(nearest), nearest)
-      : emptyCard('near', 'P', 'Närmaste parkering', 'Ingen parkering hittad i närheten'),
+      ? optionCard('near', 'P', nearestTitle, nearest.name, metaLine(nearest), nearest)
+      : emptyCard('near', 'P', 'Närmaste parkering', wait || `Ingen parkering för ${fmtDuration(state.dur)} hittad i närheten`),
     nearestFree
       ? optionCard('free', '0', 'Närmaste gratis', nearestFree.name, metaLine(nearestFree), nearestFree)
-      : emptyCard('free', '0', 'Närmaste gratis', `Ingen känd gratisparkering inom ${formatDistance(Number(settings.radius))}`),
+      : emptyCard('free', '0', 'Närmaste gratis', wait || `Ingen gratisparkering för ${fmtDuration(state.dur)} inom ${formatDistance(Number(settings.radius))}`),
   );
 
   renderList();
@@ -150,7 +272,7 @@ function render() {
 }
 
 function metaLine(p) {
-  const bits = [`${formatDistance(p.distance)} · ${walkMinutes(p.distance)} min gång`, feeLabel(p)];
+  const bits = [`${formatDistance(p.distance)} · ${walkMinutes(p.distance)} min gång`, costText(p)];
   if (p.freeSpaces != null) bits.push(`${p.freeSpaces} lediga`);
   if (p.access === 'customers') bits.push('endast kunder');
   return bits.join(' · ');
@@ -185,28 +307,38 @@ function goLink(target, label, small = false) {
   return a;
 }
 
+function currentFilter() {
+  return { maxDistance: state.maxDist, fee: state.fee, onlyFits: state.onlyFits };
+}
+
 function renderList() {
-  const items = applyFilters(state.all, { maxDistance: state.maxDist, fee: state.fee });
+  const items = applyFilters(state.all, currentFilter());
+  const hidden = state.onlyFits ? applyFilters(state.all, { ...currentFilter(), onlyFits: false }).length - items.length : 0;
+  $('hiddenCount').textContent = hidden > 0 ? `(${hidden} dolda)` : '';
   const ul = $('list');
   ul.innerHTML = '';
   if (!items.length) {
-    ul.innerHTML = '<li class="empty">Inga parkeringar matchar filtret. Öka avståndet eller välj "Alla".</li>';
+    ul.innerHTML = `<li class="empty">${state.loading ? 'Hämtar…' : 'Inga parkeringar matchar. Öka avståndet, välj kortare tid eller visa alla.'}</li>`;
     return;
   }
   items.slice(0, 40).forEach((p) => {
     const li = document.createElement('li');
+    if (!fits(p)) li.className = 'nofit';
+    const rule = p.fee === 'free' && p.maxStay && fits(p) ? `<span class="tag unknown">max ${escapeHtml(p.maxStay)}</span>` : '';
+    const priceTxt = p.fee === 'paid' && p.price ? `<div class="m">${escapeHtml(p.price)}</div>` : '';
     const tags = [
-      `<span class="tag ${p.fee}">${escapeHtml(feeLabel(p))}</span>`,
+      `<span class="tag ${costClass(p)}">${escapeHtml(costText(p))}</span>`,
+      rule,
       p.freeSpaces != null ? `<span class="tag occ">${p.freeSpaces} lediga</span>` : '',
       p.access === 'customers' ? '<span class="tag cust">Endast kunder</span>' : '',
       p.source === 'gbg' ? '<span class="tag gbg">Göteborgs Stad</span>' : '',
     ].join('');
-    const extra = p.extra ? `<div class="m">${escapeHtml(p.extra)}</div>` : '';
+    const notes = [p.extra, p.restriction].filter(Boolean).map((t) => `<div class="m">${escapeHtml(t)}</div>`).join('');
     const cap = p.capacity ? ` · ${p.capacity} platser` : '';
     li.innerHTML = `<div>
         <div class="n">${escapeHtml(p.name)}</div>
         <div class="m">${tags}</div>
-        <div class="m">${formatDistance(p.distance)} · ${walkMinutes(p.distance)} min gång${cap}${p.operator && p.operator !== p.name ? ' · ' + escapeHtml(p.operator) : ''}</div>${extra}
+        <div class="m">${formatDistance(p.distance)} · ${walkMinutes(p.distance)} min gång${cap}${p.operator && p.operator !== p.name ? ' · ' + escapeHtml(p.operator) : ''}</div>${priceTxt}${notes}
       </div>`;
     li.appendChild(goLink(p, p.name, true));
     ul.appendChild(li);
@@ -220,11 +352,12 @@ function renderMap(nearest, nearestFree) {
   const { dest } = state;
   const pts = [[dest.lat, dest.lon]];
   L.marker([dest.lat, dest.lon], { icon: pin('dest', '★'), zIndexOffset: 1000 }).addTo(layer).bindPopup(escapeHtml(dest.label));
-  applyFilters(state.all, { maxDistance: state.maxDist, fee: state.fee }).slice(0, 60).forEach((p) => {
+  applyFilters(state.all, currentFilter()).slice(0, 60).forEach((p) => {
     const highlight = p === nearest || p === nearestFree;
-    L.marker([p.lat, p.lon], { icon: pin(p.fee, p.fee === 'free' ? '0' : 'P'), zIndexOffset: highlight ? 500 : 0 })
+    const cls = fits(p) ? (p.eval?.cost === 0 ? 'free' : p.fee) : 'unknown';
+    L.marker([p.lat, p.lon], { icon: pin(cls, cls === 'free' ? '0' : 'P'), zIndexOffset: highlight ? 500 : 0 })
       .addTo(layer)
-      .bindPopup(`<b>${escapeHtml(p.name)}</b><br>${escapeHtml(feeLabel(p))}<br>${formatDistance(p.distance)} från målet<br><a href="${navUrl(settings.navApp, p.lat, p.lon, p.name)}" target="_blank" rel="noopener">Kör hit</a>`);
+      .bindPopup(`<b>${escapeHtml(p.name)}</b><br>${escapeHtml(costText(p))}<br>${formatDistance(p.distance)} från målet<br><a href="${navUrl(settings.navApp, p.lat, p.lon, p.name)}" target="_blank" rel="noopener">Kör hit</a>`);
     if (highlight) pts.push([p.lat, p.lon]);
   });
   setTimeout(() => {
@@ -234,44 +367,51 @@ function renderMap(nearest, nearestFree) {
   }, 50);
 }
 
+// ---------- Parkeringstid ----------
+function paintDur() {
+  document.querySelectorAll('#durBar button').forEach((b) => b.classList.toggle('on', Number(b.dataset.min) === state.dur));
+}
+document.querySelectorAll('#durBar button').forEach((b) =>
+  b.addEventListener('click', () => {
+    state.dur = Number(b.dataset.min);
+    store.set('dur', state.dur);
+    paintDur();
+    if (state.dest) render();
+  }),
+);
+paintDur();
+
 // ---------- Filter ----------
 const distVal = () => ($('distVal').textContent = formatDistance(state.maxDist));
 $('maxDist').value = state.maxDist;
 distVal();
+const refreshListAndMap = () => { if (state.dest) { renderList(); const o = pickOptions(state.all); renderMap(o.nearest, o.nearestFree); } };
 $('maxDist').addEventListener('input', (e) => {
   state.maxDist = Number(e.target.value);
   store.set('maxDist', state.maxDist);
   distVal();
-  if (state.dest) { renderList(); renderMap(...Object.values(pickOptions(state.all))); }
+  refreshListAndMap();
 });
 document.querySelectorAll('.seg button').forEach((b) =>
   b.addEventListener('click', () => {
     document.querySelectorAll('.seg button').forEach((x) => x.classList.toggle('on', x === b));
     state.fee = b.dataset.fee;
-    if (state.dest) { renderList(); renderMap(...Object.values(pickOptions(state.all))); }
+    refreshListAndMap();
   }),
 );
+$('onlyFits').checked = state.onlyFits;
+$('onlyFits').addEventListener('change', (e) => {
+  state.onlyFits = e.target.checked;
+  store.set('onlyFits', state.onlyFits);
+  refreshListAndMap();
+});
 
 // ---------- Senaste sökningar ----------
 function saveRecent(d) {
   const list = store.get('recent', []).filter((r) => r.label !== d.label);
   list.unshift({ label: d.label, full: d.full, lat: d.lat, lon: d.lon });
   store.set('recent', list.slice(0, 5));
-  renderRecent();
 }
-function renderRecent() {
-  const box = $('recent');
-  box.innerHTML = '';
-  store.get('recent', []).forEach((r) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = r.label.split(',')[0];
-    b.title = r.full || r.label;
-    b.addEventListener('click', () => chooseDest(r));
-    box.appendChild(b);
-  });
-}
-renderRecent();
 
 // ---------- Inställningar ----------
 function openSettings(open) {
@@ -284,6 +424,7 @@ $('appId').value = settings.appId;
 $('settingsBtn').addEventListener('click', () => openSettings(true));
 $('sheetBg').addEventListener('click', () => closeSettings());
 $('closeSettings').addEventListener('click', () => closeSettings());
+
 function setGbgState([msg, cls]) {
   const el = $('gbgState');
   el.textContent = msg;

@@ -50,20 +50,30 @@ button.primary {
 }
 button.primary.wide { width: 100%; padding: 14px; margin-top: 8px; }
 
+.search { position: relative; }
 .suggestions {
-  list-style: none; margin: 6px 0 0; padding: 0; background: var(--card);
+  list-style: none; margin: 6px 0 0; padding: 4px 0; background: var(--card);
   border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
+  box-shadow: 0 8px 24px rgba(15,27,45,.12); position: relative; z-index: 1500;
 }
-.suggestions li { padding: 12px 14px; border-top: 1px solid var(--line); cursor: pointer; }
-.suggestions li:first-child { border-top: 0; }
-.suggestions li small { display: block; color: var(--muted); }
-.suggestions li:hover { background: var(--bg); }
+.suggestions li { display: flex; gap: 12px; align-items: center; padding: 10px 14px; cursor: pointer; }
+.suggestions li .k { width: 30px; height: 30px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--bg); font-size: 15px; }
+.suggestions li .tx { min-width: 0; }
+.suggestions li b { font-weight: 600; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.suggestions li b u { text-decoration: none; color: var(--go); }
+.suggestions li small { display: block; color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.suggestions li.on, .suggestions li:hover { background: #eef3fd; }
+.suggestions li.none { color: var(--muted); font-size: 14px; cursor: default; }
 
-.recent { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
-.recent button {
-  border: 1px solid var(--line); background: var(--card); border-radius: 999px;
-  padding: 6px 12px; font-size: 14px; color: var(--muted); cursor: pointer;
+.dur { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.dur > span { font-size: 14px; color: var(--muted); font-weight: 600; white-space: nowrap; }
+.chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 2px; }
+.chips::-webkit-scrollbar { display: none; }
+.chips button {
+  flex: none; border: 1px solid var(--line); background: var(--card); border-radius: 999px;
+  padding: 7px 13px; font-size: 14px; font-weight: 600; color: var(--ink); cursor: pointer;
 }
+.chips button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
 
 .status { margin: 14px 2px; color: var(--muted); }
 .status.err { color: #b3261e; }
@@ -100,6 +110,7 @@ a.go.small { min-width: 60px; height: 38px; font-size: 14px; padding: 0 12px; }
 .tag.paid { background: var(--paid-bg); color: var(--paid); }
 .tag.unknown { background: var(--unk-bg); color: var(--muted); }
 .tag.cust { background: #f3e8fd; color: #6b2fa3; }
+.tag.bad { background: #fde8e7; color: #b3261e; }
 .tag.occ { background: #e8f0fe; color: var(--go); }
 
 .map { height: 260px; border-radius: var(--radius); margin: 14px 0; overflow: hidden; box-shadow: 0 0 0 1px var(--line); }
@@ -124,6 +135,10 @@ a.go.small { min-width: 60px; height: 38px; font-size: 14px; padding: 0 12px; }
 }
 .list .n { font-weight: 600; }
 .list .m { font-size: 13px; color: var(--muted); margin-top: 3px; }
+.list li.nofit { opacity: .6; }
+.toggle { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--ink); }
+.toggle input { width: 18px; height: 18px; }
+#hiddenCount { color: var(--muted); }
 .list .empty { display: block; color: var(--muted); text-align: center; box-shadow: none; background: none; }
 
 .foot { margin-top: 28px; font-size: 12px; color: var(--muted); text-align: center; }

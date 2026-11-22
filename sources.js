@@ -8,6 +8,11 @@ const GBG_CENTER = { lat: 57.7089, lon: 11.9746 };
 async function fetchJson(url, opts = {}, timeoutMs = 15000) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  const outer = opts.signal;
+  if (outer) {
+    if (outer.aborted) ctrl.abort();
+    else outer.addEventListener('abort', () => ctrl.abort(), { once: true });
+  }
   try {
     const res = await fetch(url, { ...opts, signal: ctrl.signal });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -59,6 +64,62 @@ export async function geocode(query) {
     });
 }
 
+// ---------- Sökförslag medan man skriver (Photon – byggt för autocomplete) ----------
+const suggestCache = new Map();
+
+export async function suggest(query, signal) {
+  const q = query.trim();
+  if (q.length < 2) return [];
+  const key = q.toLowerCase();
+  if (suggestCache.has(key)) return suggestCache.get(key);
+  const url =
+    'https://photon.komoot.io/api/?' +
+    new URLSearchParams({
+      q, limit: '8', lang: 'default',
+      lat: GBG_CENTER.lat, lon: GBG_CENTER.lon, location_bias_scale: '0.3', zoom: '12',
+    });
+  const data = await fetchJson(url, { signal }, 6000);
+  const seen = new Set();
+  const out = [];
+  for (const f of data.features || []) {
+    const p = f.properties || {};
+    if ((p.countrycode || '').toUpperCase() !== 'SE') continue;
+    const street = [p.street, p.housenumber].filter(Boolean).join(' ');
+    const isAddress = p.osm_key === 'place' && p.osm_value === 'house' || (!p.name && street);
+    const title = isAddress ? street || p.name : p.name || street;
+    if (!title) continue;
+    const place = p.city || p.town || p.village || p.locality || p.district || p.county || '';
+    const sub = [isAddress ? '' : street, place].filter(Boolean).join(', ');
+    const id = `${title}|${sub}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push({
+      label: [title, place].filter(Boolean).join(', '),
+      title,
+      sub,
+      full: [title, sub].filter(Boolean).join(', '),
+      kind: kindOf(p),
+      lat: f.geometry.coordinates[1],
+      lon: f.geometry.coordinates[0],
+    });
+    if (out.length >= 6) break;
+  }
+  suggestCache.set(key, out);
+  return out;
+}
+
+function kindOf(p) {
+  const v = `${p.osm_key}:${p.osm_value}`;
+  if (/amenity:(restaurant|cafe|bar|pub|fast_food)/.test(v)) return '🍽';
+  if (/shop:|amenity:marketplace/.test(v)) return '🛍';
+  if (/railway|public_transport|highway:bus_stop|amenity:bus_station/.test(v)) return '🚉';
+  if (/amenity:(hospital|clinic|doctors|dentist)/.test(v)) return '🏥';
+  if (/leisure|tourism|amenity:(theatre|cinema|arts_centre)/.test(v)) return '★';
+  if (/place:(city|town|village|suburb|neighbourhood|quarter)/.test(v)) return '◎';
+  if (/highway/.test(v)) return '⟋';
+  return '📍';
+}
+
 function shortLabel(d) {
   const a = d.address || {};
   const street = [a.road || a.pedestrian, a.house_number].filter(Boolean).join(' ');
@@ -70,26 +131,49 @@ function shortLabel(d) {
 const OVERPASS_MIRRORS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
-  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ];
 
+// Enkel cache (10 min) så att samma mål inte hämtas om
+const CACHE_MS = 10 * 60 * 1000;
+function cacheGet(key, ttl = CACHE_MS) {
+  try {
+    const raw = sessionStorage.getItem('parkera.c.' + key);
+    if (!raw) return null;
+    const { t, v } = JSON.parse(raw);
+    return Date.now() - t < ttl ? v : null;
+  } catch { return null; }
+}
+function cacheSet(key, v) {
+  try { sessionStorage.setItem('parkera.c.' + key, JSON.stringify({ t: Date.now(), v })); } catch { /* fullt */ }
+}
+
+// Frågar båda speglarna samtidigt och tar det första svaret
 export async function fetchOsmParkings(lat, lon, radius) {
+  const key = `osm:${lat.toFixed(4)},${lon.toFixed(4)},${radius}`;
+  const hit = cacheGet(key);
+  if (hit) return hit;
   const body = 'data=' + encodeURIComponent(buildOverpassQuery(lat, lon, radius));
-  let lastErr;
-  for (const url of OVERPASS_MIRRORS) {
-    try {
-      const data = await fetchJson(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body,
-      }, 20000);
-      return (data.elements || []).map(fromOsm).filter(Boolean);
-    } catch (e) {
-      lastErr = e;
-      console.warn('Overpass-spegel misslyckades:', url, e);
-    }
+  const ctrl = new AbortController();
+  const attempts = OVERPASS_MIRRORS.map((url) =>
+    fetchJson(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+      signal: ctrl.signal,
+    }, 9000).then((data) => {
+      if (!Array.isArray(data.elements)) throw new Error('tomt svar');
+      return data.elements;
+    }),
+  );
+  try {
+    const elements = await Promise.any(attempts);
+    ctrl.abort(); // avbryt den långsammare
+    const items = elements.map(fromOsm).filter(Boolean);
+    cacheSet(key, items);
+    return items;
+  } catch (e) {
+    throw new Error('Overpass otillgängligt');
   }
-  throw lastErr || new Error('Overpass otillgängligt');
 }
 
 // ---------- Göteborgs Stads öppna API ----------
@@ -131,6 +215,9 @@ async function gbgGet(url) {
 
 export async function fetchGbgParkings(appId, lat, lon, radius) {
   if (!appId) return { items: [], ok: false, reason: 'ingen APPID' };
+  const key = `gbg:${lat.toFixed(4)},${lon.toFixed(4)},${radius}`;
+  const hit = cacheGet(key, 3 * 60 * 1000); // kortare: lediga platser ändras
+  if (hit) return { items: hit, ok: true, reason: '', transport: 'cache' };
   const qs = `?latitude=${lat.toFixed(6)}&longitude=${lon.toFixed(6)}&radius=${Math.round(radius)}&format=Json`;
   const calls = [
     ['PublicTimeParkings', 'time'], // gratis gatuparkering med tidsgräns
@@ -143,6 +230,7 @@ export async function fetchGbgParkings(appId, lat, lon, radius) {
   const items = results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
   const ok = results.some((r) => r.status === 'fulfilled');
   const reason = ok ? '' : results.map((r) => r.reason?.message || String(r.reason))[0];
+  if (ok) cacheSet(key, items);
   return { items, ok, reason, transport: gbgTransport };
 }
 

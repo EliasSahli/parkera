@@ -22,11 +22,22 @@
 
   <main>
     <form id="searchForm" class="search" autocomplete="off">
-      <input id="q" type="search" placeholder="Vart ska du? T.ex. Kungsportsavenyen 10" enterkeyhint="search" aria-label="Destination">
+      <input id="q" type="search" placeholder="Vart ska du? T.ex. Kungsportsavenyen 10" enterkeyhint="search" aria-label="Destination" autocomplete="off" autocorrect="off" spellcheck="false">
       <button type="submit" class="primary">Sök</button>
     </form>
-    <ul id="suggestions" class="suggestions" hidden></ul>
-    <div id="recent" class="recent"></div>
+    <ul id="suggestions" class="suggestions" hidden role="listbox"></ul>
+
+    <div class="dur">
+      <span>Jag stannar</span>
+      <div class="chips" id="durBar" role="radiogroup" aria-label="Parkeringstid">
+        <button type="button" data-min="30">30 min</button>
+        <button type="button" data-min="60">1 h</button>
+        <button type="button" data-min="120">2 h</button>
+        <button type="button" data-min="180">3 h</button>
+        <button type="button" data-min="240">4 h</button>
+        <button type="button" data-min="480">8 h</button>
+      </div>
+    </div>
 
     <p id="status" class="status" role="status" hidden></p>
 
@@ -48,6 +59,7 @@
             <button type="button" data-fee="free">Gratis</button>
             <button type="button" data-fee="paid">Avgift</button>
           </div>
+          <label class="toggle"><input type="checkbox" id="onlyFits"> Visa bara platser där jag får stå så länge <span id="hiddenCount"></span></label>
         </div>
         <ul id="list" class="list"></ul>
       </div>

@@ -83,9 +83,11 @@ export function fromGbg(item, kind) {
     maxStay: item.MaxParkingTime || null,
     capacity: num(item.ParkingSpaces),
     freeSpaces: freshFreeSpaces(item),
+    currentRate: num(item.CurrentParkingCost),
     access: 'public',
     operator: item.Owner || 'Göteborgs Stad',
-    extra: item.ExtraInfo || item.MaxParkingTimeLimitation || null,
+    extra: item.ExtraInfo || null,
+    restriction: item.MaxParkingTimeLimitation || null,
   };
 }
 
@@ -138,20 +140,31 @@ export function prepare(parkings, dest) {
 // Ett fullt känt objekt räknas som fullt och väljs inte som förslag
 const isFull = (p) => p.freeSpaces != null && p.freeSpaces <= 0;
 
+// Plats som passar vald parkeringstid (eller saknar bedömning)
+export const fits = (p) => !isFull(p) && p.eval?.ok !== false;
+
+// Tre förslag. Kort 2 blir aldrig samma plats som kort 3:
+// är närmaste plats gratis visas närmaste avgiftsparkering i kort 2 istället.
 export function pickOptions(list) {
-  const usable = list.filter((p) => !isFull(p));
-  // Närmaste publika; men om den har okänd avgift och en känd ligger högst 150 m längre bort, välj den kända
-  let nearest = usable.find((p) => p.access === 'public') || usable[0] || null;
+  const usable = list.filter((p) => fits(p) && p.access === 'public');
+  const nearestFree = usable.find((p) => p.fee === 'free') || null;
+
+  let nearest = usable[0] || null;
   if (nearest && nearest.fee === 'unknown') {
-    const known = usable.find((p) => p.access === 'public' && p.fee !== 'unknown');
+    const known = usable.find((p) => p.fee !== 'unknown');
     if (known && known.distance - nearest.distance <= 150) nearest = known;
   }
-  const nearestFree = usable.find((p) => p.fee === 'free' && p.access === 'public') || null;
-  return { nearest, nearestFree };
+  let nearestTitle = 'Närmaste parkering';
+  if (nearest && nearestFree && nearest.id === nearestFree.id) {
+    nearest = usable.find((p) => p.fee === 'paid') || usable.find((p) => p.id !== nearestFree.id) || null;
+    nearestTitle = nearest?.fee === 'paid' ? 'Närmaste avgiftsparkering' : 'Annan parkering';
+  }
+  return { nearest, nearestFree, nearestTitle };
 }
 
-export function applyFilters(list, { maxDistance = Infinity, fee = 'all', hideCustomers = false } = {}) {
+export function applyFilters(list, { maxDistance = Infinity, fee = 'all', hideCustomers = false, onlyFits = false } = {}) {
   return list.filter((p) => {
+    if (onlyFits && !fits(p)) return false;
     if (p.distance > maxDistance) return false;
     if (fee === 'free' && p.fee !== 'free') return false;
     if (fee === 'paid' && p.fee !== 'paid') return false;
