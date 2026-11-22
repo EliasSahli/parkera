@@ -137,7 +137,10 @@ export function updateMap(data) {
   // Ytor
   const features = parkings
     .filter(({ p }) => p.geom && p.geom.type !== 'Point')
-    .map(({ p, fits, focus, cls }) => ({ type: 'Feature', geometry: p.geom, properties: { id: p.id, fits, cls, focus: Boolean(focus) } }));
+    // GeometryCollection delas upp så att ytor och remsor får rätt lager
+    .flatMap(({ p, fits, focus, cls }) => (p.geom.type === 'GeometryCollection' ? p.geom.geometries : [p.geom])
+      .filter((g) => g.type !== 'Point')
+      .map((g) => ({ type: 'Feature', geometry: g, properties: { id: p.id, fits, cls, focus: Boolean(focus) } })));
   map.getSource(AREA_SRC).setData({ type: 'FeatureCollection', features });
 
   // Nålar

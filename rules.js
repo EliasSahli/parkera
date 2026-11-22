@@ -1,12 +1,68 @@
-// rules.js – tolkar parkeringsregler i fritext (maxtid, pris, P-förbud)
+// rules.js – tolkar Göteborgs parkeringsregler i fritext (maxtid, pris, P-förbud, tillstånd)
 // och räknar ut om en plats passar för en viss parkeringstid och vad den kostar.
-// Ren logik utan nätverk/DOM, testbar i Node.
+// Ren logik utan nätverk/DOM, testbar i Node. Testad mot verkliga texter (tests/real-texts.test.js).
+
+// ---------- Kalender: svenska helgdagar och "dag före sön- och helgdag" ----------
+function easter(y) {
+  // Anonym gregoriansk algoritm
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4;
+  const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31), day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(y, month - 1, day);
+}
+const holidayCache = new Map();
+export function swedishHolidays(y) {
+  if (holidayCache.has(y)) return holidayCache.get(y);
+  const set = new Set();
+  const add = (d) => set.add(`${d.getMonth() + 1}-${d.getDate()}`);
+  const e = easter(y);
+  const rel = (n) => new Date(y, e.getMonth(), e.getDate() + n);
+  [new Date(y, 0, 1), new Date(y, 0, 6), rel(-2), e, rel(1), new Date(y, 4, 1), rel(39), rel(49),
+    new Date(y, 5, 6), new Date(y, 11, 25), new Date(y, 11, 26)].forEach(add);
+  // Midsommardagen: lördag 20–26 juni. Alla helgons dag: lördag 31 okt–6 nov.
+  for (let d = 20; d <= 26; d++) { const t = new Date(y, 5, d); if (t.getDay() === 6) add(t); }
+  for (let d = 0; d <= 6; d++) { const t = new Date(y, 9, 31 + d); if (t.getDay() === 6) add(t); }
+  holidayCache.set(y, set);
+  return set;
+}
+export function isHoliday(date) {
+  return swedishHolidays(date.getFullYear()).has(`${date.getMonth() + 1}-${date.getDate()}`);
+}
+// Dag enligt skyltlogik: helgdag = söndag (0), vardag före helgdag = lördag (6)
+export function effectiveDay(date) {
+  if (date.getDay() === 0 || isHoliday(date)) return 0;
+  const next = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1);
+  if (date.getDay() !== 6 && isHoliday(next)) return 6;
+  return date.getDay();
+}
+export function isoWeek(date) {
+  const t = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const day = t.getUTCDay() || 7;
+  t.setUTCDate(t.getUTCDate() + 4 - day);
+  const y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+  return Math.ceil(((t - y0) / 864e5 + 1) / 7);
+}
+
+// ---------- Textnormalisering ----------
+const MONTHS = ['januari', 'februari', 'mars', 'april', 'maj', 'juni', 'juli', 'augusti', 'september', 'oktober', 'november', 'december'];
+const MON_RE = `(${MONTHS.join('|')}|jan|feb|mar|apr|jun|jul|aug|sep|sept|okt|nov|dec)`;
+
+// "vardag före sön- och helgdag" och liknande = lördag i skyltspråk
+function normalize(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/(?:vardag(?:ar)?|dag(?:ar)?)\s+före\s+sön-?\s*(?:och|&)\s*helgdag(?:ar)?/g, ' lördag ')
+    .replace(/(?:vardag(?:ar)?|dag(?:ar)?)\s+före\s+(?:söndag|helgdag)(?:ar)?/g, ' lördag ')
+    .replace(/sön-?\s*(?:och|&)\s*helgdag(?:ar)?/g, ' söndag ');
+}
 
 const DAY_WORDS = [
   [/alla dagar|dagligen|varje dag/, [0, 1, 2, 3, 4, 5, 6]],
   [/vardag|mån(?:dag)?\s*[-–]\s*fre(?:dag)?/, [1, 2, 3, 4, 5]],
   [/helgdag/, [0]],
-  [/helg|lör(?:dag)?\s*[-–]\s*sön(?:dag)?/, [0, 6]],
+  [/helg(?!fri)|lör(?:dag)?\s*[-–]\s*sön(?:dag)?/, [0, 6]],
   [/lördag/, [6]],
   [/söndag/, [0]],
   [/måndag/, [1]],
@@ -18,8 +74,8 @@ const DAY_WORDS = [
 
 // Text -> mängd veckodagar (0 = söndag). null = ingen dag nämnd (gäller alla dagar)
 export function parseDays(text) {
-  // "vardag utom dag före sön- och helgdag" – undantaget ska inte räknas som dagar
-  const t = text.toLowerCase().replace(/utom[^0-9]*?(?=klockan|kl\.|\d|$)/g, ' ');
+  // "vardag utom lördag klockan…" – undantaget räknas inte som dagar
+  const t = normalize(text).replace(/utom[^0-9]*?(?=klockan|kl\.|\d|$)/g, ' ');
   const days = new Set();
   let rest = t;
   for (const [re, ds] of DAY_WORDS) {
@@ -31,31 +87,104 @@ export function parseDays(text) {
   return days.size ? days : null;
 }
 
-// "8-22", "08.00 - 10.00", "9:30–18" -> {from, to} i minuter efter midnatt
+// "8-22", "08.00 - 10.00", "9:30–18", "23-24" -> {from, to} i minuter efter midnatt
 export function parseWindow(text) {
-  const m = /(\d{1,2})(?:[.:](\d{2}))?\s*[-–]\s*(\d{1,2})(?:[.:](\d{2}))?/.exec(text);
-  if (!m) return null;
-  const from = Number(m[1]) * 60 + Number(m[2] || 0);
-  const to = Number(m[3]) * 60 + Number(m[4] || 0);
-  if (from > 24 * 60 || to > 24 * 60) return null;
-  return { from, to };
+  const re = /(\d{1,2})(?:[.:](\d{2}))?\s*[-–]\s*(\d{1,2})(?:[.:](\d{2}))?(?!\s*\/|\d|:e|:a)/g;
+  let m;
+  while ((m = re.exec(text))) {
+    // hoppa över datum som "1/6-30/9"
+    if (/\/\s*$/.test(text.slice(0, m.index))) continue;
+    const from = Number(m[1]) * 60 + Number(m[2] || 0);
+    const to = Number(m[3]) * 60 + Number(m[4] || 0);
+    if (from > 24 * 60 || to > 24 * 60) continue;
+    return { from, to };
+  }
+  return null;
 }
 
-// "30 min", "3 tim", "2 timmar", "2 hours", "1 h", "1 dygn", "PT2H" -> minuter
+// "under tiden 15:e mars - 30:e april", "1:a oktober - 30 april", "1/6-30/9" -> {from:[m,d], to:[m,d]}
+export function parseSeason(text) {
+  const t = String(text || '').toLowerCase();
+  let m = new RegExp(`(\\d{1,2})(?::[ae])?\\s*${MON_RE}\\s*[-–]\\s*(\\d{1,2})(?::[ae])?\\s*${MON_RE}`).exec(t);
+  if (m) return { from: [monthIndex(m[2]), Number(m[1])], to: [monthIndex(m[4]), Number(m[3])] };
+  m = /(\d{1,2})\s*\/\s*(\d{1,2})\s*[-–]\s*(\d{1,2})\s*\/\s*(\d{1,2})/.exec(t);
+  if (m) return { from: [Number(m[2]), Number(m[1])], to: [Number(m[4]), Number(m[3])] };
+  return null;
+}
+function monthIndex(name) {
+  const i = MONTHS.findIndex((mo) => mo.startsWith(name.slice(0, 3)));
+  return i + 1;
+}
+function inSeason(season, date) {
+  if (!season) return true;
+  const md = (date.getMonth() + 1) * 100 + date.getDate();
+  const f = season.from[0] * 100 + season.from[1];
+  const to = season.to[0] * 100 + season.to[1];
+  return f <= to ? md >= f && md <= to : md >= f || md <= to;
+}
+function parseParity(text) {
+  if (/jämna veckor/i.test(text)) return 0;
+  if (/udda veckor/i.test(text)) return 1;
+  return null;
+}
+// Ta bort säsong och veckor innan dagar/tider tolkas
+function stripMeta(text) {
+  return String(text || '')
+    .replace(new RegExp(`under tiden.*$`, 'i'), ' ')
+    .replace(/\d{1,2}\s*\/\s*\d{1,2}\s*[-–]\s*\d{1,2}\s*\/\s*\d{1,2}/g, ' ')
+    .replace(/(jämna|udda) veckor/gi, ' ');
+}
+
+// Ett regelfönster: dagar + tid (+ ev. jämna/udda veckor och säsong)
+function makeRule(text, extra = {}) {
+  const core = stripMeta(text);
+  const w = parseWindow(core);
+  return {
+    days: parseDays(core),
+    from: w?.from ?? 0,
+    to: w?.to ?? 1440,
+    hasWindow: Boolean(w),
+    parity: parseParity(text),
+    season: parseSeason(text),
+    text,
+    ...extra,
+  };
+}
+
+// Är tidpunkten inom regeln? Fönster över midnatt (22-06) räknas till dagen då det började.
+export function inRule(rule, date) {
+  const min = date.getHours() * 60 + date.getMinutes();
+  let anchor = date;
+  if (rule.from > rule.to) {
+    if (min >= rule.from) anchor = date;
+    else if (min < rule.to) anchor = new Date(date.getFullYear(), date.getMonth(), date.getDate() - 1, 12);
+    else return false;
+  } else if (!(min >= rule.from && min < rule.to)) {
+    return false;
+  }
+  if (rule.days && !rule.days.has(effectiveDay(anchor))) return false;
+  if (rule.parity != null && isoWeek(anchor) % 2 !== rule.parity) return false;
+  if (!inSeason(rule.season, anchor)) return false;
+  return true;
+}
+
+// ---------- Maxtid ----------
+// "30 min", "3 tim", "2 timmar", "7 dagar", "7 dygn", "0,5", "24", "PT2H" -> minuter
 export function parseMaxStay(text) {
-  if (!text) return null;
-  const t = String(text).toLowerCase().replace(',', '.');
+  if (text == null || text === '') return null;
+  const t = String(text).toLowerCase().replace(',', '.').trim();
+  if (/^\d+(\.\d+)?$/.test(t)) return Math.round(Number(t) * 60); // bara siffra = timmar
   const iso = /^p?t?(\d+)h$/i.exec(t.replace(/\s/g, ''));
   if (iso) return Number(iso[1]) * 60;
   let total = 0;
   let found = false;
-  const re = /(\d+(?:\.\d+)?)\s*(dygn|d(?:ay|ays)?\b|tim(?:me|mar)?|h(?:ours?|rs?)?\b|min(?:ut(?:er|es?)?)?)/g;
+  const re = /(\d+(?:\.\d+)?)\s*(dygn|dagar|dag|days?\b|d\b|tim(?:me|mar)?|h(?:ours?|rs?)?\b|min(?:ut(?:er|es?)?)?)/g;
   let m;
   while ((m = re.exec(t))) {
     const n = Number(m[1]);
     const u = m[2];
     found = true;
-    if (u.startsWith('dygn') || u.startsWith('d')) total += n * 1440;
+    if (u.startsWith('dygn') || u.startsWith('dag') || u.startsWith('day') || u === 'd') total += n * 1440;
     else if (u.startsWith('t') || u.startsWith('h')) total += n * 60;
     else total += n;
   }
@@ -69,115 +198,189 @@ function sentences(text) {
     .filter(Boolean);
 }
 
-// Pristext -> { rules: [{rate, days, from, to}], otherRate } eller null om okänt
-// Ex: "34 kr/tim 8-22 alla dagar. Övrig tid: 2 kr/tim"
+// ---------- Pris ----------
+// "34 kr/tim 8-22 alla dagar. Övrig tid: 2 kr/tim", "5 kr/30 min alla dagar 00-24", "Maxpris 42 kr/dygn"
+// -> { rules: [{rate (kr/h), days, from, to}], otherRate, dayCap } eller null om okänt
+const RATE_RE = /(\d+(?:[.,]\d+)?)\s*(?:kr|:-|sek)\s*\/\s*(?:per\s*)?(?:påbörjad\s*)?(\d+(?:[.,]\d+)?)?\s*(tim(?:me|mar)?|h|min(?:ut(?:er)?)?)\b/i;
 export function parsePrice(text) {
   if (!text) return null;
   const rules = [];
   let otherRate = null;
+  let dayCap = null;
   for (const s of sentences(text)) {
-    const rateM = /(\d+(?:[.,]\d+)?)\s*(?:kr|:-|sek)\s*\/?\s*(?:per\s*)?(?:påbörjad\s*)?(tim(?:me)?|h)\b/i.exec(s);
+    const cap = /(\d+)\s*(?:kr|:-)\s*\/\s*dygn/i.exec(s);
+    if (cap) dayCap = Number(cap[1]);
+    const rateM = RATE_RE.exec(s);
     if (!rateM) continue;
-    const rate = Number(rateM[1].replace(',', '.'));
-    if (/övrig/i.test(s)) {
-      otherRate = rate;
-      continue;
-    }
-    const w = parseWindow(s.replace(rateM[0], ' '));
-    rules.push({ rate, days: parseDays(s), from: w?.from ?? 0, to: w?.to ?? 1440 });
+    const n = Number(rateM[1].replace(',', '.'));
+    const per = Number((rateM[2] || '1').replace(',', '.'));
+    const unitMin = /^min/i.test(rateM[3]) ? 1 : 60;
+    const rate = (n * 60) / (per * unitMin); // kr per timme
+    if (/övrig/i.test(s)) { otherRate = rate; continue; }
+    rules.push(makeRule(s.replace(rateM[0], ' '), { rate }));
   }
-  if (!rules.length && otherRate == null) return null;
-  return { rules, otherRate };
+  if (!rules.length && otherRate == null && dayCap == null) return null;
+  if (!rules.length && otherRate == null) return { rules: [], otherRate: null, dayCap, capOnly: true };
+  return { rules, otherRate, dayCap };
 }
 
-// Text med P-förbud -> lista med förbudsfönster
-// Ex: "P-förbud måndagar klockan 08.00 - 10.00."
+// Avgiftssäsong: "Avgift 1/6-30/9", "Avgiftsplikten gäller under tiden 1:a april - 30 september"
+export function parseFeeSeason(text) {
+  for (const s of sentences(text)) {
+    if (/avgift/i.test(s)) {
+      const season = parseSeason(s);
+      if (season) return season;
+    }
+  }
+  return null;
+}
+
+// Kostnad för [start, start+durMin] i hela kronor, eller null om okänd.
+export function costFor(price, start, durMin, { feeSeason = null } = {}) {
+  if (!price || price.capOnly) return null;
+  let cost = 0;
+  let block = 0;
+  const t = new Date(start.getTime());
+  t.setSeconds(0, 0);
+  for (let m = 0; m < durMin; m++) {
+    if (m > 0 && m % 1440 === 0) { cost += price.dayCap != null ? Math.min(block, price.dayCap) : block; block = 0; }
+    if (inSeason(feeSeason, t)) {
+      const rule = price.rules.find((r) => inRule(r, t));
+      const rate = rule ? rule.rate : price.otherRate ?? 0;
+      block += rate / 60;
+    }
+    t.setMinutes(t.getMinutes() + 1);
+  }
+  cost += price.dayCap != null ? Math.min(block, price.dayCap) : block;
+  return Math.round(cost);
+}
+
+// ---------- Förbud, tillstånd och tidsgränser ----------
+// "P-förbud måndagar klockan 08.00 - 10.00 jämna veckor under tiden 15:e mars - 30:e april."
+// "P-förbud alla dagar 23-24. alla dagar 00-06." (andra meningen hör till samma förbud)
 export function parseBans(text) {
   const bans = [];
+  let prevBan = false;
   for (const s of sentences(text)) {
-    if (!/p-förbud|parkeringsförbud|städ/i.test(s)) continue;
-    const w = parseWindow(s);
-    if (!w) continue;
-    bans.push({ days: parseDays(s), from: w.from, to: w.to, text: s });
+    const isBan = /p-förbud|parkeringsförbud|städ/i.test(s);
+    const continues = prevBan && !/kr|avgift|tillstånd|max|högst|öppet/i.test(s) && parseWindow(stripMeta(s));
+    if (isBan || continues) {
+      const r = makeRule(s);
+      if (r.hasWindow) bans.push(r);
+      prevBan = true;
+    } else {
+      prevBan = false;
+    }
   }
   return bans;
 }
 
-function inWindow(rule, date) {
-  const day = date.getDay();
-  if (rule.days && !rule.days.has(day)) return false;
-  const min = date.getHours() * 60 + date.getMinutes();
-  if (rule.from <= rule.to) return min >= rule.from && min < rule.to;
-  return min >= rule.from || min < rule.to; // över midnatt, t.ex. 22-06
+// "P-tillstånd erfordras helgfri Mån-Fre 07-17", "Förhyrda platser 07-17"
+const PERMIT_RE = /p-tillstånd erfordras|tillstånd (?:krävs|erfordras)|förhyrda platser|endast (?:för )?(?:boende|tillståndshavare|abonnenter|förhyrda)|reserverad(?:e)? platser/i;
+export function parsePermits(text) {
+  return sentences(text).filter((s) => PERMIT_RE.test(s)).map((s) => makeRule(s));
 }
 
-const STEP = 15; // minuter
-
-// Kostnad för [start, start+durMin]. Returnerar kronor (heltal) eller null om okänd.
-export function costFor(price, start, durMin) {
-  if (!price) return null;
-  let cost = 0;
-  const t = new Date(start.getTime());
-  t.setSeconds(0, 0);
-  for (let m = 0; m < durMin; m++) {
-    const rule = price.rules.find((r) => inWindow(r, t));
-    const rate = rule ? rule.rate : price.otherRate ?? 0;
-    cost += rate / 60;
-    t.setMinutes(t.getMinutes() + 1);
+// Tidsgränsens giltighet:
+//  "Tidsbegränsningen gäller vardag utom vardag före sön- och helgdag klockan 09.00 - 18.00
+//   och vardag före sön- och helgdag klockan 09.00 - 15.00."  -> två fönster
+//  "Parkering är dock tillåten under högst 30 min i följd [dagar klockan …]." -> extra maxtid
+export function parseLimits(text) {
+  const windows = [];
+  const extraMax = [];
+  for (const s of sentences(text)) {
+    const hogst = /högst\s+(\d+(?:[.,]\d+)?\s*(?:min(?:uter)?|tim(?:mar|me)?|h))\s*i\s*följd(.*)$/i.exec(s);
+    if (hogst) {
+      const minutes = parseMaxStay(hogst[1]);
+      const r = makeRule(hogst[2] || '');
+      extraMax.push({ minutes, rule: r.hasWindow || r.days ? r : null });
+      continue;
+    }
+    if (!/tidsbegränsning|tillåtelsen|tidsgräns/i.test(s)) continue;
+    // Dela "… klockan A och lördag klockan B" i flera fönster
+    const parts = normalize(s).split(/\s+och\s+/);
+    let carry = '';
+    for (const part of parts) {
+      const seg = `${carry} ${part}`.trim();
+      if (!parseWindow(stripMeta(seg))) { carry = seg; continue; }
+      windows.push(makeRule(seg));
+      carry = '';
+    }
   }
-  return Math.round(cost);
+  return { windows, extraMax };
+}
+// Bakåtkompatibelt: första fönstret
+export function limitWindow(text) {
+  return parseLimits(text).windows[0] || null;
 }
 
-export function banDuring(bans, start, durMin) {
+// Gäller någon regel någon gång under [start, start+durMin)?
+export function ruleDuring(rules, start, durMin, step = 5) {
   const t = new Date(start.getTime());
-  for (let m = 0; m <= durMin; m += STEP) {
-    const hit = bans.find((b) => inWindow(b, t));
+  for (let m = 0; m < Math.max(durMin, 1); m += step) {
+    const hit = rules.find((r) => inRule(r, t));
     if (hit) return hit;
-    t.setMinutes(t.getMinutes() + STEP);
+    t.setMinutes(t.getMinutes() + step);
   }
   return null;
 }
+export const banDuring = ruleDuring;
 
 const pad = (n) => String(n).padStart(2, '0');
 export const fmtMin = (min) => `${pad(Math.floor(min / 60))}.${pad(min % 60)}`;
 export function fmtDuration(min) {
   if (min < 60) return `${min} min`;
+  if (min >= 1440 && min % 1440 === 0) return `${min / 1440} dygn`;
   const h = min / 60;
   return `${Number.isInteger(h) ? h : h.toFixed(1).replace('.', ',')} h`;
 }
 
-// "Tillåtelsen gäller vardag klockan 08.00 - 22.00" -> fönster då tidsgränsen gäller
-export function limitWindow(text) {
-  if (!text || !/gäller/i.test(text)) return null;
-  const w = parseWindow(text);
-  return w ? { days: parseDays(text), from: w.from, to: w.to } : null;
-}
-
-// Bedöm en plats för vald tid.
+// ---------- Bedömning ----------
 // -> { ok, reason, cost (kr|null), approx }
 export function evaluate(p, start, durMin) {
-  const extra = [p.extra, p.restriction].filter(Boolean).join('. ');
+  const all = [p.extra, p.restriction].filter(Boolean).join('. ');
+  const fail = (reason) => ({ ok: false, reason, cost: null, approx: false });
+
+  // Maxtid, och när den gäller
   const maxMin = p.maxStayMin ?? parseMaxStay(p.maxStay);
-  // "Tillåtelsen gäller vardag klockan 08.00 - 22.00" = tidsgränsen gäller bara då
-  const limitWin = limitWindow(p.restriction);
-  const limitApplies = !limitWin || banDuring([limitWin], start, durMin - 1) != null;
-  if (maxMin != null && maxMin < durMin && limitApplies) {
-    return { ok: false, reason: `max ${fmtDuration(maxMin)}`, cost: null, approx: false };
+  const { windows, extraMax } = parseLimits(p.restriction);
+  const limitApplies = !windows.length || ruleDuring(windows, start, durMin) != null;
+  if (maxMin != null && maxMin < durMin && limitApplies) return fail(`max ${fmtDuration(maxMin)}`);
+  for (const x of extraMax) {
+    if (x.minutes != null && x.minutes < durMin && (!x.rule || ruleDuring([x.rule], start, durMin))) {
+      return fail(`max ${fmtDuration(x.minutes)} i följd`);
+    }
   }
-  const ban = banDuring(parseBans(extra), start, durMin);
-  if (ban) {
-    return { ok: false, reason: `P-förbud ${fmtMin(ban.from)}–${fmtMin(ban.to)}`, cost: null, approx: false };
-  }
+
+  // Tillstånd / förhyrda platser
+  const permit = ruleDuring(parsePermits(all), start, durMin);
+  if (permit) return fail('kräver tillstånd');
+
+  // P-förbud (med jämna/udda veckor och säsong)
+  const ban = ruleDuring(parseBans(all), start, durMin);
+  if (ban) return fail(`P-förbud ${fmtMin(ban.from)}–${fmtMin(ban.to)}`);
+
   if (p.fee === 'free') return { ok: true, reason: '', cost: 0, approx: false };
   if (p.fee === 'paid') {
-    const parsed = parsePrice(p.price);
-    let cost = costFor(parsed, start, durMin);
+    const feeSeason = parseFeeSeason([p.price, all].filter(Boolean).join('. '));
+    const parsed = parsePrice([p.price, capText(all)].filter(Boolean).join('. '));
+    let cost = costFor(parsed, start, durMin, { feeSeason });
     let approx = false;
     if (cost == null && p.currentRate != null) {
-      cost = Math.round((p.currentRate * durMin) / 60);
+      cost = inSeasonAny(feeSeason, start, durMin) ? Math.round((p.currentRate * durMin) / 60) : 0;
       approx = true;
     }
     return { ok: true, reason: '', cost, approx };
   }
   return { ok: true, reason: '', cost: null, approx: false };
+}
+
+// Dygnstak kan stå i ExtraInfo ("Maxpris 42 kr/dygn", "70 kr/dygn")
+function capText(text) {
+  const m = /(\d+)\s*(?:kr|:-)\s*\/\s*dygn/i.exec(text || '');
+  return m ? `Maxpris ${m[1]} kr/dygn` : '';
+}
+function inSeasonAny(season, start, durMin) {
+  if (!season) return true;
+  return inSeason(season, start) || inSeason(season, new Date(start.getTime() + durMin * 60000));
 }

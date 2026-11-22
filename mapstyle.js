@@ -114,8 +114,14 @@ export function appleStyle(style, dark = false) {
     .filter((l) => !HIDE.test(l.id))
     .map((l) => {
       const paint = colorFor(l.id, l.type, c);
-      if (!paint) return l;
-      return { ...l, paint: { ...(l.paint || {}), ...paint } };
+      let out2 = paint ? { ...l, paint: { ...(l.paint || {}), ...paint } } : l;
+      // Liberty visar platta hus bara upp till zoom 14 och 3D-hus därefter.
+      // 3D-lagret är dolt (Apple-looken är platt), så de platta husen måste gälla på alla zoomnivåer.
+      if (l.id === 'building' && out2.maxzoom != null) {
+        out2 = { ...out2 };
+        delete out2.maxzoom;
+      }
+      return out2;
     });
   return out;
 }

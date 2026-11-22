@@ -210,17 +210,17 @@ function jsonp(url, timeoutMs = 12000) {
 
 let gbgTransport = null; // 'fetch' | 'jsonp' – kom ihåg vad som fungerade
 
-async function gbgGet(url) {
+async function gbgGet(url, timeoutMs = 10000) {
   if (gbgTransport !== 'jsonp') {
     try {
-      const data = await fetchJson(url, {}, 10000);
+      const data = await fetchJson(url, {}, timeoutMs);
       gbgTransport = 'fetch';
       return data;
     } catch (e) {
       if (gbgTransport === 'fetch') throw e;
     }
   }
-  const data = await jsonp(url);
+  const data = await jsonp(url, timeoutMs);
   gbgTransport = 'jsonp';
   return data;
 }
@@ -239,7 +239,9 @@ async function fetchViaProxy(lat, lon, radius) {
   ].filter(Boolean);
 }
 
-export async function fetchGbgParkings(appId, lat, lon, radius) {
+// onPartial(items): anropas varje gång en lista har kommit, så att appen kan visa den direkt
+// i stället för att vänta på den långsammaste (pendelparkeringarna svarade inte vid test).
+export async function fetchGbgParkings(appId, lat, lon, radius, onPartial = null) {
   if (PROXY_URL) {
     const key = `gbgp:${lat.toFixed(4)},${lon.toFixed(4)},${radius}`;
     const hit = cacheGet(key, 3 * 60 * 1000);
@@ -258,14 +260,18 @@ export async function fetchGbgParkings(appId, lat, lon, radius) {
   const hit = cacheGet(key, 3 * 60 * 1000); // kortare: lediga platser ändras
   if (hit) return { items: hit, ok: true, reason: '', transport: 'cache' };
   const qs = `?latitude=${lat.toFixed(6)}&longitude=${lon.toFixed(6)}&radius=${Math.round(radius)}&format=Json`;
+  const sofar = [];
   const calls = [
-    ['PublicTimeParkings', 'time'], // gratis gatuparkering med tidsgräns
-    ['PublicTollParkings', 'toll'], // avgiftsparkering (pris + ibland lediga platser)
-    ['PrivateTollParkings', 'private'], // p-hus, garage och privat mark med avgift
-    ['CommuterParkings', 'commuter'], // pendelparkeringar (ofta med lediga platser)
-  ].map(async ([ep, kind]) => {
-    const data = await gbgGet(`${GBG_BASE}/${ep}/${encodeURIComponent(appId)}${qs}`);
-    return (Array.isArray(data) ? data : []).map((it) => fromGbg(it, kind)).filter(Boolean);
+    ['PublicTimeParkings', 'time', 9000], // gratis gatuparkering med tidsgräns
+    ['PublicTollParkings', 'toll', 9000], // avgiftsparkering
+    ['PrivateTollParkings', 'private', 9000], // p-hus, garage och privat mark med avgift
+    ['CommuterParkings', 'commuter', 5000], // pendelparkeringar – svarade med serverfel vid test, kort timeout
+  ].map(async ([ep, kind, tmo]) => {
+    const data = await gbgGet(`${GBG_BASE}/${ep}/${encodeURIComponent(appId)}${qs}`, tmo);
+    const items = (Array.isArray(data) ? data : []).map((it) => fromGbg(it, kind)).filter(Boolean);
+    sofar.push(...items);
+    if (onPartial) { try { onPartial([...sofar]); } catch (e) { console.warn(e); } }
+    return items;
   });
   const results = await Promise.allSettled(calls);
   const items = results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));

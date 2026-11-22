@@ -6,6 +6,22 @@
 export function parseWKT(wkt) {
   if (!wkt || typeof wkt !== 'string') return null;
   const s = wkt.trim().replace(/^SRID=\d+;/i, '');
+  // GEOMETRYCOLLECTION (POLYGON ((…)), LINESTRING (…)) – dela på toppnivå och tolka varje del
+  const gc = /^GEOMETRYCOLLECTION\s*\((.*)\)\s*$/is.exec(s);
+  if (gc) {
+    const parts = [];
+    let depth = 0;
+    let start = 0;
+    const body = gc[1];
+    for (let i = 0; i < body.length; i++) {
+      if (body[i] === '(') depth++;
+      else if (body[i] === ')') depth--;
+      else if (body[i] === ',' && depth === 0) { parts.push(body.slice(start, i)); start = i + 1; }
+    }
+    parts.push(body.slice(start));
+    const geometries = parts.map((x) => parseWKT(x.trim())).filter(Boolean);
+    return geometries.length ? { type: 'GeometryCollection', geometries } : null;
+  }
   const m = /^(MULTIPOLYGON|MULTILINESTRING|POLYGON|LINESTRING|POINT)\s*(?:Z|M|ZM)?\s*(\(.*\))\s*$/is.exec(s);
   if (!m) return null;
   const type = m[1].toUpperCase();
@@ -85,10 +101,12 @@ export function gridToLatLon(northing, easting, p) {
 
 // ---------- Hjälpfunktioner ----------
 function mapCoords(geom, fn) {
+  if (geom.type === 'GeometryCollection') return { type: geom.type, geometries: geom.geometries.map((g) => mapCoords(g, fn)) };
   const walk = (c) => (typeof c[0] === 'number' ? fn(c) : c.map(walk));
   return { type: geom.type, coordinates: walk(geom.coordinates) };
 }
 function firstCoord(geom) {
+  if (geom.type === 'GeometryCollection') return firstCoord(geom.geometries[0]);
   let c = geom.coordinates;
   while (Array.isArray(c[0])) c = c[0];
   return c;
@@ -151,6 +169,10 @@ export function centroid(geom) {
   const walk = (c) => {
     if (typeof c[0] === 'number') { sx += c[0]; sy += c[1]; n++; } else c.forEach(walk);
   };
+  if (geom.type === 'GeometryCollection') {
+    const cs = geom.geometries.map(centroid).filter(Boolean);
+    return cs.length ? { lon: cs.reduce((a, c) => a + c.lon, 0) / cs.length, lat: cs.reduce((a, c) => a + c.lat, 0) / cs.length } : null;
+  }
   if (geom.type === 'Polygon') walk(geom.coordinates[0].slice(0, -1));
   else if (geom.type === 'MultiPolygon') geom.coordinates.forEach((p) => walk(p[0].slice(0, -1)));
   else walk(geom.coordinates);
@@ -169,6 +191,7 @@ function inRing(x, y, ring) {
 }
 export function pointInGeom(lon, lat, geom) {
   if (!geom) return false;
+  if (geom.type === 'GeometryCollection') return geom.geometries.some((g) => pointInGeom(lon, lat, g));
   if (geom.type === 'Polygon') return inRing(lon, lat, geom.coordinates[0]);
   if (geom.type === 'MultiPolygon') return geom.coordinates.some((p) => inRing(lon, lat, p[0]));
   return false;

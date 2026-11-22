@@ -83,7 +83,7 @@ test('Apple-stil: lager färgas och onödiga lager tas bort', () => {
       { id: 'water', type: 'fill', paint: { 'fill-color': '#00f' } },
       { id: 'road_minor', type: 'line', paint: { 'line-color': '#f00', 'line-width': 2 } },
       { id: 'road_trunk_primary_casing', type: 'line', paint: { 'line-color': '#f00' } },
-      { id: 'building', type: 'fill', paint: { 'fill-color': '#999' } },
+      { id: 'building', type: 'fill', minzoom: 13, maxzoom: 14, paint: { 'fill-color': '#999' } },
       { id: 'building-3d', type: 'fill-extrusion' },
       { id: 'label_city', type: 'symbol', paint: { 'text-color': '#000' } },
     ],
@@ -100,7 +100,10 @@ test('Apple-stil: lager färgas och onödiga lager tas bort', () => {
   assert.equal(get(light, 'road_minor').paint['line-width'], 2, 'övriga egenskaper behålls');
   assert.equal(get(light, 'road_trunk_primary_casing').paint['line-color'], PALETTE.light.roadMajorCase);
   assert.equal(get(dark, 'label_city').paint['text-color'], PALETTE.dark.textMajor);
+  assert.equal(get(light, 'building').maxzoom, undefined, 'husen ska synas även inzoomat (3D-lagret är dolt)');
+  assert.equal(get(light, 'building').minzoom, 13);
   assert.equal(style.layers.length, 9, 'originalet ändras inte');
+  assert.equal(style.layers.find((l) => l.id === 'building').maxzoom, 14, 'originalet ändras inte');
 });
 
 import { prepare, borrowShapes } from '../core.js';

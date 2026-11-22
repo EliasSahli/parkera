@@ -239,7 +239,11 @@ async function chooseDest(dest) {
     .catch((e) => { console.warn(e); errors++; })
     .finally(() => { pending--; merge(); });
 
-  fetchGbgParkings(settings.appId, dest.lat, dest.lon, radius)
+  fetchGbgParkings(settings.appId, dest.lat, dest.lon, radius, (partial) => {
+    // visa varje Göteborgslista så fort den har kommit
+    parts.gbg = partial;
+    merge();
+  })
     .then((res) => {
       parts.gbg = res.items;
       $('gbgCredit').hidden = !res.items.length;
