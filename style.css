@@ -184,3 +184,5 @@ button.ghost.wide { width: 100%; height: 44px; }
 .pickwrap { position: relative; flex: none; display: inline-flex; }
 .pickwrap input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; font-size: 16px; }
 .no-touch .pickwrap input { pointer-events: none; }
+
+.hint.other a { font-weight: 600; }

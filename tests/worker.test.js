@@ -59,6 +59,9 @@ test('Zonkod, delningslänk och betalapp', () => {
   assert.equal(fromGbg({ Lat: 57.7, Long: 11.97, PhoneParkingCode: ' 4115 ' }, 'toll').payCode, '4115');
   assert.equal(shareUrl('https://eliassahli.github.io/parkera/?x=1#a', ''), 'https://eliassahli.github.io/parkera/');
   assert.equal(shareUrl('https://eliassahli.github.io/parkera/', 'abc'), 'https://eliassahli.github.io/parkera/?appid=abc');
-  assert.match(payAppUrl('parkster', true), /apps\.apple\.com\/se\/app\/id533140250/);
-  assert.match(payAppUrl('okänd', false), /play\.google\.com/);
+  assert.equal(payAppUrl('parkster', true), 'https://www.parkster.com/app');
+  assert.equal(payAppUrl('easypark', false), 'https://easypark.app.link/');
+  assert.match(payAppUrl('pgbg', true), /apps\.apple\.com\/se\/app\/id1184264972/);
+  assert.match(payAppUrl('pgbg', false), /play\.google\.com/);
+  assert.equal(payAppUrl('okänd', true), 'https://www.parkster.com/app');
 });

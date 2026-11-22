@@ -96,9 +96,9 @@
     </label>
     <label>Betala med
       <select id="payApp">
-        <option value="pgbg">Parkering Göteborg</option>
-        <option value="easypark">EasyPark</option>
-        <option value="parkster">Parkster</option>
+        <option value="parkster">Parkster (öppnas direkt)</option>
+        <option value="easypark">EasyPark (öppnas direkt)</option>
+        <option value="pgbg">Parkering Göteborg (via App Store)</option>
       </select>
     </label>
     <label>Sökradie runt målet
@@ -132,8 +132,9 @@
       <b id="payCode">–</b>
       <button type="button" class="ghost" id="copyCode">Kopiera</button>
     </div>
-    <a class="go wide" id="payOpen" href="#" target="_blank" rel="noopener">Öppna Parkering Göteborg</a>
-    <p class="hint">Starta parkeringen i appen med zonkoden ovan. Kontrollera alltid zonkoden på skylten på plats.</p>
+    <a class="go wide" id="payOpen" href="#">Öppna Parkster</a>
+    <p class="hint" id="payHow">Zonkoden kopieras när du trycker. Klistra in den i appens sökfält. Kontrollera alltid zonkoden på skylten.</p>
+    <p class="hint other" id="payOthers"></p>
     <button class="primary wide" id="closePay" type="button">Stäng</button>
   </section>
 

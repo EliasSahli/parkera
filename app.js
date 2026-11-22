@@ -1,7 +1,7 @@
 // app.js – UI och flöde
 import {
   prepare, pickOptions, applyFilters, navUrl, feeLabel, formatDistance, walkMinutes, fits,
-  PAY_APPS, payAppUrl, shareUrl,
+  PAY_APPS, payAppUrl, opensDirectly, shareUrl,
 } from './core.js';
 import { evaluate, fmtDuration } from './rules.js';
 import {
@@ -19,7 +19,7 @@ const isApple = /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent);
 const isIos = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const settings = {
   navApp: store.get('navApp', isApple ? 'apple' : 'google'),
-  payApp: store.get('payApp', 'pgbg'),
+  payApp: store.get('payApp2', 'parkster'), // ny nyckel: tidigare sparat val pekade på App Store
   radius: store.get('radius', 1500),
   appId: store.get('appId', ''),
 };
@@ -496,25 +496,36 @@ function openPay(p) {
   $('payTitle').textContent = p.name;
   $('payPrice').textContent = [p.price, p.eval?.cost != null ? `Uppskattat: ${p.eval.cost} kr för ${fmtDuration(state.dur)}` : ''].filter(Boolean).join(' · ');
   $('payCode').textContent = p.payCode;
-  $('payOpen').href = payAppUrl(settings.payApp, isIos);
-  $('payOpen').textContent = `Öppna ${app.name}`;
+  setPayLink($('payOpen'), settings.payApp);
+  $('payOpen').textContent = opensDirectly(settings.payApp) ? `Öppna ${app.name}` : `Öppna ${app.name} (App Store)`;
+  // Andra appar som alternativ
+  const others = Object.keys(PAY_APPS).filter((k) => k !== settings.payApp);
+  const box = $('payOthers');
+  box.innerHTML = 'Eller betala med ';
+  others.forEach((k, i) => {
+    const link = document.createElement('a');
+    link.textContent = PAY_APPS[k].name;
+    setPayLink(link, k);
+    box.append(link, document.createTextNode(i < others.length - 2 ? ', ' : i === others.length - 2 ? ' eller ' : '.'));
+  });
   $('paySheet').hidden = false;
   $('sheetBg').hidden = false;
+}
+function setPayLink(a, key) {
+  a.href = payAppUrl(key, isIos);
+  // Universal Links öppnar appen bäst i samma flik; appbutiken i ny flik
+  if (opensDirectly(key)) { a.removeAttribute('target'); a.removeAttribute('rel'); }
+  else { a.target = '_blank'; a.rel = 'noopener'; }
+  a.onclick = () => { copyCode(); };
+}
+async function copyCode() {
+  try { await navigator.clipboard.writeText(payTarget?.payCode || ''); return true; } catch { return false; }
 }
 function closePay() { $('paySheet').hidden = true; $('sheetBg').hidden = true; }
 $('closePay').addEventListener('click', closePay);
 $('copyCode').addEventListener('click', async () => {
-  try {
-    await navigator.clipboard.writeText(payTarget?.payCode || '');
-    $('copyCode').textContent = 'Kopierad ✓';
-  } catch {
-    $('copyCode').textContent = 'Markera koden';
-  }
+  $('copyCode').textContent = (await copyCode()) ? 'Kopierad ✓' : 'Markera koden';
   setTimeout(() => ($('copyCode').textContent = 'Kopiera'), 1800);
-});
-$('payOpen').addEventListener('click', async () => {
-  // kopiera zonkoden automatiskt så den bara behöver klistras in
-  try { await navigator.clipboard.writeText(payTarget?.payCode || ''); } catch { /* ok */ }
 });
 
 // ---------- Dela ----------
@@ -614,7 +625,7 @@ function closeSettings() {
   settings.payApp = $('payApp').value;
   settings.radius = Number($('radius').value);
   settings.appId = $('appId').value.trim();
-  Object.entries(settings).forEach(([k, v]) => store.set(k, v));
+  Object.entries(settings).forEach(([k, v]) => store.set(k === 'payApp' ? 'payApp2' : k, v));
   openSettings(false);
   if (!state.dest) return;
   if (prevRadius !== settings.radius || prevApp !== settings.appId) chooseDest(state.dest);
