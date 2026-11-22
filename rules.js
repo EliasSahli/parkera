@@ -18,7 +18,8 @@ const DAY_WORDS = [
 
 // Text -> mängd veckodagar (0 = söndag). null = ingen dag nämnd (gäller alla dagar)
 export function parseDays(text) {
-  const t = text.toLowerCase();
+  // "vardag utom dag före sön- och helgdag" – undantaget ska inte räknas som dagar
+  const t = text.toLowerCase().replace(/utom[^0-9]*?(?=klockan|kl\.|\d|$)/g, ' ');
   const days = new Set();
   let rest = t;
   for (const [re, ds] of DAY_WORDS) {
@@ -117,12 +118,12 @@ export function costFor(price, start, durMin) {
   if (!price) return null;
   let cost = 0;
   const t = new Date(start.getTime());
-  for (let m = 0; m < durMin; m += STEP) {
-    const step = Math.min(STEP, durMin - m);
+  t.setSeconds(0, 0);
+  for (let m = 0; m < durMin; m++) {
     const rule = price.rules.find((r) => inWindow(r, t));
     const rate = rule ? rule.rate : price.otherRate ?? 0;
-    cost += (rate * step) / 60;
-    t.setMinutes(t.getMinutes() + STEP);
+    cost += rate / 60;
+    t.setMinutes(t.getMinutes() + 1);
   }
   return Math.round(cost);
 }

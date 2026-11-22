@@ -106,3 +106,11 @@ test('Plats som inte passar vald tid väljs inte som förslag', () => {
   list.forEach((p) => { p.eval = evaluate(p, mon1200, 120); });
   assert.equal(pickOptions(list).nearestFree.name, 'Lång');
 });
+
+test('Fel från riktig data: "vardag utom dag före sön- och helgdag" och minutexakt kostnad', () => {
+  assert.deepEqual([...parseDays('Tidsbegränsningen gäller vardag utom dag före sön- och helgdag klockan 00.00 - 24.00.')].sort(), [1, 2, 3, 4, 5]);
+  // Söndag 20:44, 8 h med "34 kr/tim 8-22 alla dagar. Övrig tid: 2 kr/tim":
+  // 76 min à 34 = 43,07 + 404 min à 2 = 13,47 -> 57 kr (tidigare felaktigt 64)
+  const p = parsePrice('34 kr/tim 8-22 alla dagar. Övrig tid: 2 kr/tim');
+  assert.equal(costFor(p, new Date(2026, 10, 22, 20, 44), 480), 57);
+});
