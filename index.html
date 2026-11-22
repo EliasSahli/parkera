@@ -23,6 +23,7 @@
   <main>
     <form id="searchForm" class="search" autocomplete="off">
       <input id="q" type="search" placeholder="Vart ska du? T.ex. Kungsportsavenyen 10" enterkeyhint="search" aria-label="Destination" autocomplete="off" autocorrect="off" spellcheck="false">
+      <button type="button" class="here" id="hereBtn" aria-label="Parkera här – använd min position" title="Parkera här"><span>➤</span></button>
       <button type="submit" class="primary">Sök</button>
     </form>
     <ul id="suggestions" class="suggestions" hidden role="listbox"></ul>
@@ -36,6 +37,18 @@
         <button type="button" data-min="180">3 h</button>
         <button type="button" data-min="240">4 h</button>
         <button type="button" data-min="480">8 h</button>
+      </div>
+    </div>
+    <div class="dur">
+      <span>Jag kommer</span>
+      <div class="chips" id="arriveBar" role="radiogroup" aria-label="Ankomst">
+        <button type="button" data-in="0">Nu</button>
+        <button type="button" data-in="30">Om 30 min</button>
+        <button type="button" data-in="60">Om 1 h</button>
+        <span class="pickwrap">
+          <button type="button" data-in="pick" id="arrivePickBtn">Välj tid…</button>
+          <input type="datetime-local" id="arrivePick" aria-label="Välj ankomsttid">
+        </span>
       </div>
     </div>
 
@@ -81,6 +94,13 @@
         <option value="waze">Waze</option>
       </select>
     </label>
+    <label>Betala med
+      <select id="payApp">
+        <option value="pgbg">Parkering Göteborg</option>
+        <option value="easypark">EasyPark</option>
+        <option value="parkster">Parkster</option>
+      </select>
+    </label>
     <label>Sökradie runt målet
       <select id="radius">
         <option value="1000">1 km</option>
@@ -95,7 +115,26 @@
       </div>
     </label>
     <p class="hint" id="gbgState">Ger kommunal gratisparkering med tidsgräns, avgiftsparkering med pris och ibland antal lediga platser. Gratis nyckel på <a href="https://data.goteborg.se/" target="_blank" rel="noopener">data.goteborg.se</a>.</p>
+    <div class="share">
+      <b>Dela appen med vänner</b>
+      <label class="toggle" id="shareKeyRow"><input type="checkbox" id="shareKey"> Ta med min nyckel i länken (så de får Göteborgs data direkt)</label>
+      <button type="button" class="ghost wide" id="shareBtn">Dela länk</button>
+      <p class="hint" id="shareState"></p>
+    </div>
     <button class="primary wide" id="closeSettings" type="button">Klar</button>
+  </section>
+
+  <section class="sheet" id="paySheet" hidden aria-label="Betala parkering">
+    <h2 id="payTitle">Betala parkering</h2>
+    <p class="hint" id="payPrice"></p>
+    <div class="zone">
+      <span>Zonkod</span>
+      <b id="payCode">–</b>
+      <button type="button" class="ghost" id="copyCode">Kopiera</button>
+    </div>
+    <a class="go wide" id="payOpen" href="#" target="_blank" rel="noopener">Öppna Parkering Göteborg</a>
+    <p class="hint">Starta parkeringen i appen med zonkoden ovan. Kontrollera alltid zonkoden på skylten på plats.</p>
+    <button class="primary wide" id="closePay" type="button">Stäng</button>
   </section>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

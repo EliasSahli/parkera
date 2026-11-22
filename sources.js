@@ -1,5 +1,6 @@
 // sources.js – hämtar data från nätet (körs i webbläsaren)
 import { fromOsm, fromGbg, buildOverpassQuery } from './core.js';
+import { PROXY_URL } from './config.js';
 
 // Göteborgsområdet – styr adressökningen hit
 const GBG_VIEWBOX = '11.70,57.85,12.25,57.55'; // väst,nord,öst,syd
@@ -62,6 +63,17 @@ export async function geocode(query) {
         lon: f.geometry.coordinates[0],
       };
     });
+}
+
+// Position -> kort adress ("Vasagatan 12") för "Parkera här"
+export async function reverseGeocode(lat, lon) {
+  try {
+    const data = await fetchJson(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lon}&limit=1`, {}, 5000);
+    const p = data.features?.[0]?.properties;
+    if (!p) return null;
+    const street = [p.street || p.name, p.housenumber].filter(Boolean).join(' ');
+    return street || p.name || null;
+  } catch { return null; }
 }
 
 // ---------- Sökförslag medan man skriver (Photon – byggt för autocomplete) ----------
@@ -213,7 +225,32 @@ async function gbgGet(url) {
   return data;
 }
 
+export const hasProxy = () => Boolean(PROXY_URL);
+
+// Via Parkeras egen server (nyckeln ligger på servern)
+async function fetchViaProxy(lat, lon, radius) {
+  const url = `${PROXY_URL.replace(/\/$/, '')}/parking?lat=${lat.toFixed(5)}&lon=${lon.toFixed(5)}&radius=${Math.round(radius)}`;
+  const data = await fetchJson(url, {}, 8000);
+  return [
+    ...(data.time || []).map((it) => fromGbg(it, 'time')),
+    ...(data.toll || []).map((it) => fromGbg(it, 'toll')),
+  ].filter(Boolean);
+}
+
 export async function fetchGbgParkings(appId, lat, lon, radius) {
+  if (PROXY_URL) {
+    const key = `gbgp:${lat.toFixed(4)},${lon.toFixed(4)},${radius}`;
+    const hit = cacheGet(key, 3 * 60 * 1000);
+    if (hit) return { items: hit, ok: true, reason: '', transport: 'cache' };
+    try {
+      const items = await fetchViaProxy(lat, lon, radius);
+      cacheSet(key, items);
+      return { items, ok: true, reason: '', transport: 'proxy' };
+    } catch (e) {
+      console.warn('Proxy misslyckades', e);
+      if (!appId) return { items: [], ok: false, reason: 'servern svarar inte' };
+    }
+  }
   if (!appId) return { items: [], ok: false, reason: 'ingen APPID' };
   const key = `gbg:${lat.toFixed(4)},${lon.toFixed(4)},${radius}`;
   const hit = cacheGet(key, 3 * 60 * 1000); // kortare: lediga platser ändras

@@ -28,6 +28,10 @@ Nyckeln sparas och försvinner sedan ur adressfältet.
 Tekniskt: webbläsaren blockerar vanliga anrop till data.goteborg.se (CORS), så appen hämtar via JSONP,
 som API:t stöder. Ingen egen server behövs.
 
+## Låt vänner använda Göteborgs data utan nyckel
+Lägg upp den lilla servern i `worker/` (instruktioner i `worker/README.md`, ca 5 min, gratis)
+och sätt adressen i `config.js`. Tills dess: Dela-knappen under ⚙︎ kan ta med din nyckel i länken.
+
 ## Utveckling
 ```
 npm test                     # enhetstester för logiken

@@ -58,6 +58,7 @@ export function fromOsm(el) {
     maxStay: t.maxstay || null,
     capacity: t.capacity ? parseInt(t.capacity, 10) || null : null,
     freeSpaces: null,
+    payCode: t['payment:zone'] || t['zone'] || null,
     access: access === 'customers' ? 'customers' : 'public',
     operator: t.operator || null,
   };
@@ -84,6 +85,7 @@ export function fromGbg(item, kind) {
     capacity: num(item.ParkingSpaces),
     freeSpaces: freshFreeSpaces(item),
     currentRate: num(item.CurrentParkingCost),
+    payCode: item.PhoneParkingCode ? String(item.PhoneParkingCode).trim() : null,
     access: 'public',
     operator: item.Owner || 'Göteborgs Stad',
     extra: item.ExtraInfo || null,
@@ -195,4 +197,26 @@ export function feeLabel(p) {
 
 export function buildOverpassQuery(lat, lon, radius) {
   return `[out:json][timeout:20];nwr["amenity"="parking"](around:${Math.round(radius)},${lat},${lon});out center tags;`;
+}
+
+// ---------- Betalning ----------
+// Appar som kan betala Göteborgs Stads parkeringar. Att öppna en annan app från en webbsida
+// fungerar inte pålitligt, så vi länkar till appens butikssida (visar "Öppna" om den finns installerad).
+export const PAY_APPS = {
+  pgbg: { name: 'Parkering Göteborg', ios: 'https://apps.apple.com/se/app/id1184264972', android: 'https://play.google.com/store/search?q=Parkering%20G%C3%B6teborg&c=apps' },
+  easypark: { name: 'EasyPark', ios: 'https://apps.apple.com/se/app/id449594317', android: 'https://play.google.com/store/search?q=EasyPark&c=apps' },
+  parkster: { name: 'Parkster', ios: 'https://apps.apple.com/se/app/id533140250', android: 'https://play.google.com/store/search?q=Parkster&c=apps' },
+};
+export function payAppUrl(key, isIos) {
+  const a = PAY_APPS[key] || PAY_APPS.pgbg;
+  return isIos ? a.ios : a.android;
+}
+
+// Delningslänk till appen, valfritt med nyckel
+export function shareUrl(base, appId) {
+  const u = new URL(base);
+  u.search = '';
+  u.hash = '';
+  if (appId) u.searchParams.set('appid', appId);
+  return u.toString();
 }

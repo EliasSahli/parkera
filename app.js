@@ -1,9 +1,12 @@
 // app.js – UI och flöde
 import {
   prepare, pickOptions, applyFilters, navUrl, feeLabel, formatDistance, walkMinutes, fits,
+  PAY_APPS, payAppUrl, shareUrl,
 } from './core.js';
 import { evaluate, fmtDuration } from './rules.js';
-import { geocode, suggest, fetchOsmParkings, fetchGbgParkings, testGbgKey } from './sources.js';
+import {
+  geocode, suggest, reverseGeocode, fetchOsmParkings, fetchGbgParkings, testGbgKey, hasProxy,
+} from './sources.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -13,8 +16,10 @@ const store = {
   set(k, v) { try { localStorage.setItem('parkera.' + k, JSON.stringify(v)); } catch { /* privat läge */ } },
 };
 const isApple = /iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent);
+const isIos = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const settings = {
   navApp: store.get('navApp', isApple ? 'apple' : 'google'),
+  payApp: store.get('payApp', 'pgbg'),
   radius: store.get('radius', 1500),
   appId: store.get('appId', ''),
 };
@@ -39,6 +44,8 @@ const state = {
   fee: 'all',
   dur: store.get('dur', 120),
   onlyFits: store.get('onlyFits', true),
+  arriveIn: 0, // minuter från nu, eller null när en egen tid är vald
+  arriveAt: null, // Date när en egen tid är vald
   req: 0,
   loading: false,
 };
@@ -178,14 +185,41 @@ $('searchForm').addEventListener('submit', async (e) => {
   }
 });
 
+// ---------- Parkera här (min position) ----------
+$('hereBtn').addEventListener('click', () => {
+  if (!navigator.geolocation) return status('Din webbläsare kan inte dela position.', { err: true });
+  hideSuggestions();
+  status('Hämtar din position…', { spin: true });
+  navigator.geolocation.getCurrentPosition(
+    async (pos) => {
+      const { latitude: lat, longitude: lon } = pos.coords;
+      const dest = { label: 'Min position', full: '', lat, lon, isHere: true };
+      chooseDest(dest);
+      const street = await reverseGeocode(lat, lon);
+      if (street && state.dest === dest) {
+        dest.label = `Nära ${street}`;
+        input.value = dest.label;
+        $('destLabel').textContent = destHeading();
+      }
+    },
+    (err) => {
+      const msg = err.code === 1
+        ? 'Du behöver tillåta platstjänster för Parkera (Inställningar → Integritet → Platstjänster → Safari).'
+        : 'Kunde inte hitta din position. Försök igen utomhus eller sök på en adress.';
+      status(msg, { err: true });
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
+  );
+});
+
 // ---------- Hämta parkeringar (visar första källan direkt, fyller på med resten) ----------
 async function chooseDest(dest) {
   const req = ++state.req;
   state.dest = dest;
   state.all = [];
   input.value = dest.label;
-  saveRecent(dest);
-  status('Letar parkeringar runt ' + dest.label + '…', { spin: true });
+  if (!dest.isHere) saveRecent(dest);
+  status(dest.isHere ? 'Letar parkeringar runt dig…' : 'Letar parkeringar runt ' + dest.label + '…', { spin: true });
 
   const radius = Number(settings.radius) || 1500;
   const parts = { osm: null, gbg: null };
@@ -223,9 +257,30 @@ async function chooseDest(dest) {
 }
 
 // ---------- Bedömning för vald parkeringstid ----------
+function arrival() {
+  if (state.arriveAt) return new Date(state.arriveAt.getTime());
+  return new Date(Date.now() + state.arriveIn * 60000);
+}
+// Lediga platser just nu säger inget om läget om en timme
+const occupancyRelevant = () => arrival().getTime() - Date.now() <= 30 * 60000;
+
 function evaluateAll() {
-  const start = new Date();
-  state.all.forEach((p) => { p.eval = evaluate(p, start, state.dur); });
+  const start = arrival();
+  const occ = occupancyRelevant();
+  state.all.forEach((p) => {
+    if (p.freeSpacesNow === undefined) p.freeSpacesNow = p.freeSpaces;
+    p.freeSpaces = occ ? p.freeSpacesNow : null;
+    p.eval = evaluate(p, start, state.dur);
+  });
+}
+
+const hhmm = (d) => d.toLocaleTimeString('sv-SE', { hour: '2-digit', minute: '2-digit' });
+function destHeading() {
+  const a = arrival();
+  const sameDay = a.toDateString() === new Date().toDateString();
+  const when = state.arriveIn === 0 && !state.arriveAt ? '' :
+    ` · ankomst ${sameDay ? '' : a.toLocaleDateString('sv-SE', { weekday: 'short', day: 'numeric', month: 'short' }) + ' '}${hhmm(a)}`;
+  return (state.dest.isHere ? state.dest.label : 'Mål: ' + state.dest.label) + when;
 }
 
 function costText(p) {
@@ -251,14 +306,14 @@ function render() {
   const { dest, all } = state;
   evaluateAll();
   $('results').hidden = false;
-  $('destLabel').textContent = 'Mål: ' + dest.label;
+  $('destLabel').textContent = destHeading();
 
   const { nearest, nearestFree, nearestTitle } = pickOptions(all);
   const wait = state.loading ? 'Söker…' : null;
   const opts = $('options');
   opts.innerHTML = '';
   opts.append(
-    optionCard('dest-opt', '➜', 'Till målet', dest.label, 'Kör direkt till adressen', dest),
+    ...(dest.isHere ? [] : [optionCard('dest-opt', '➜', 'Till målet', dest.label, 'Kör direkt till adressen', dest)]),
     nearest
       ? optionCard('near', 'P', nearestTitle, nearest.name, metaLine(nearest), nearest)
       : emptyCard('near', 'P', 'Närmaste parkering', wait || `Ingen parkering för ${fmtDuration(state.dur)} hittad i närheten`),
@@ -288,8 +343,21 @@ function optionCard(cls, icon, title, name, meta, target) {
       <div class="n">${escapeHtml(name)}</div>
       <div class="m">${escapeHtml(meta)}</div>
     </div>`;
-  div.appendChild(goLink(target, name));
+  div.appendChild(actions(target, name));
   return div;
+}
+function actions(p, label, small = false) {
+  const go = goLink(p, label, small);
+  if (!(p.fee === 'paid' && p.payCode && p.eval?.ok !== false)) return go;
+  const box = document.createElement('div');
+  box.className = 'actions';
+  const pay = document.createElement('button');
+  pay.type = 'button';
+  pay.className = 'pay';
+  pay.textContent = 'Betala';
+  pay.addEventListener('click', () => openPay(p));
+  box.append(go, pay);
+  return box;
 }
 function emptyCard(cls, icon, title, msg) {
   const div = document.createElement('div');
@@ -340,7 +408,7 @@ function renderList() {
         <div class="m">${tags}</div>
         <div class="m">${formatDistance(p.distance)} · ${walkMinutes(p.distance)} min gång${cap}${p.operator && p.operator !== p.name ? ' · ' + escapeHtml(p.operator) : ''}</div>${priceTxt}${notes}
       </div>`;
-    li.appendChild(goLink(p, p.name, true));
+    li.appendChild(actions(p, p.name, true));
     ul.appendChild(li);
   });
 }
@@ -381,6 +449,97 @@ document.querySelectorAll('#durBar button').forEach((b) =>
 );
 paintDur();
 
+// ---------- Ankomsttid ----------
+function paintArrive() {
+  document.querySelectorAll('#arriveBar button').forEach((b) => {
+    const on = state.arriveAt ? b.dataset.in === 'pick' : Number(b.dataset.in) === state.arriveIn && b.dataset.in !== 'pick';
+    b.classList.toggle('on', on);
+  });
+  $('arrivePickBtn').textContent = state.arriveAt ? hhmm(state.arriveAt) + (state.arriveAt.toDateString() === new Date().toDateString() ? '' : ' ' + state.arriveAt.toLocaleDateString('sv-SE', { weekday: 'short' })) : 'Välj tid…';
+}
+document.querySelectorAll('#arriveBar button').forEach((b) =>
+  b.addEventListener('click', () => {
+    if (b.dataset.in === 'pick') {
+      // Dator: öppna väljaren via kod. Mobil: inputen ligger ovanpå knappen och tar trycket själv.
+      prefillPicker();
+      try { $('arrivePick').showPicker(); } catch { $('arrivePick').focus(); }
+      return;
+    }
+    state.arriveAt = null;
+    state.arriveIn = Number(b.dataset.in);
+    paintArrive();
+    if (state.dest) render();
+  }),
+);
+const isTouch = matchMedia('(pointer: coarse)').matches;
+if (!isTouch) document.documentElement.classList.add('no-touch');
+function prefillPicker() {
+  const d = arrival();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  $('arrivePick').value = d.toISOString().slice(0, 16);
+}
+$('arrivePick').addEventListener('pointerdown', prefillPicker);
+$('arrivePick').addEventListener('change', (e) => {
+  const v = e.target.value;
+  if (!v) return;
+  state.arriveAt = new Date(v);
+  paintArrive();
+  if (state.dest) render();
+});
+paintArrive();
+
+// ---------- Betala ----------
+let payTarget = null;
+function openPay(p) {
+  payTarget = p;
+  const app = PAY_APPS[settings.payApp] || PAY_APPS.pgbg;
+  $('payTitle').textContent = p.name;
+  $('payPrice').textContent = [p.price, p.eval?.cost != null ? `Uppskattat: ${p.eval.cost} kr för ${fmtDuration(state.dur)}` : ''].filter(Boolean).join(' · ');
+  $('payCode').textContent = p.payCode;
+  $('payOpen').href = payAppUrl(settings.payApp, isIos);
+  $('payOpen').textContent = `Öppna ${app.name}`;
+  $('paySheet').hidden = false;
+  $('sheetBg').hidden = false;
+}
+function closePay() { $('paySheet').hidden = true; $('sheetBg').hidden = true; }
+$('closePay').addEventListener('click', closePay);
+$('copyCode').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(payTarget?.payCode || '');
+    $('copyCode').textContent = 'Kopierad ✓';
+  } catch {
+    $('copyCode').textContent = 'Markera koden';
+  }
+  setTimeout(() => ($('copyCode').textContent = 'Kopiera'), 1800);
+});
+$('payOpen').addEventListener('click', async () => {
+  // kopiera zonkoden automatiskt så den bara behöver klistras in
+  try { await navigator.clipboard.writeText(payTarget?.payCode || ''); } catch { /* ok */ }
+});
+
+// ---------- Dela ----------
+function paintShare() {
+  const proxy = hasProxy();
+  $('shareKeyRow').hidden = proxy || !settings.appId;
+  $('shareState').textContent = proxy
+    ? 'Dina vänner får Göteborgs data automatiskt.'
+    : settings.appId
+      ? 'Utan nyckel får vännerna bara OpenStreetMap-data. Med nyckeln syns den i länken – dela bara med folk du litar på.'
+      : '';
+}
+$('shareBtn').addEventListener('click', async () => {
+  const base = location.href.split('#')[0];
+  const url = shareUrl(base, !hasProxy() && $('shareKey').checked ? settings.appId : '');
+  const text = 'Parkera – hitta närmaste parkering och gratisparkering i Göteborg';
+  try {
+    if (navigator.share) { await navigator.share({ title: 'Parkera', text, url }); return; }
+    await navigator.clipboard.writeText(url);
+    $('shareState').textContent = 'Länken är kopierad.';
+  } catch (e) {
+    if (e.name !== 'AbortError') $('shareState').textContent = url;
+  }
+});
+
 // ---------- Filter ----------
 const distVal = () => ($('distVal').textContent = formatDistance(state.maxDist));
 $('maxDist').value = state.maxDist;
@@ -419,10 +578,11 @@ function openSettings(open) {
   $('sheetBg').hidden = !open;
 }
 $('navApp').value = settings.navApp;
+$('payApp').value = settings.payApp;
 $('radius').value = String(settings.radius);
 $('appId').value = settings.appId;
-$('settingsBtn').addEventListener('click', () => openSettings(true));
-$('sheetBg').addEventListener('click', () => closeSettings());
+$('settingsBtn').addEventListener('click', () => { paintShare(); openSettings(true); });
+$('sheetBg').addEventListener('click', () => ($('paySheet').hidden ? closeSettings() : closePay()));
 $('closeSettings').addEventListener('click', () => closeSettings());
 
 function setGbgState([msg, cls]) {
@@ -430,7 +590,8 @@ function setGbgState([msg, cls]) {
   el.textContent = msg;
   el.className = 'hint ' + (cls || '');
 }
-if (settings.appId) setGbgState(['Nyckel sparad. Tryck "Testa" för att kontrollera den.', '']);
+if (hasProxy()) setGbgState(['Göteborgs data hämtas via Parkeras server – ingen egen nyckel behövs.', 'ok']);
+else if (settings.appId) setGbgState(['Nyckel sparad. Tryck "Testa" för att kontrollera den.', '']);
 
 $('testKey').addEventListener('click', async () => {
   const key = $('appId').value.trim();
@@ -450,6 +611,7 @@ function closeSettings() {
   const prevRadius = settings.radius;
   const prevApp = settings.appId;
   settings.navApp = $('navApp').value;
+  settings.payApp = $('payApp').value;
   settings.radius = Number($('radius').value);
   settings.appId = $('appId').value.trim();
   Object.entries(settings).forEach(([k, v]) => store.set(k, v));

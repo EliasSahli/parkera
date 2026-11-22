@@ -1,4 +1,4 @@
-# Parkera – arkitektur (testversion v0.3)
+# Parkera – arkitektur (testversion v0.4)
 
 ## Mål för testversionen
 Skriv in en adress → få tre val → tryck **Kör** → navigeringen startar i Apple Maps / Google Maps / Waze.
@@ -57,6 +57,7 @@ Plus en lista med fler parkeringar som kan filtreras på avstånd och gratis/avg
 ## Väg framåt
 - **v0.2** (klar): Göteborgs Stads data via JSONP, nyckeltest, nyckel via länk.
 - **v0.3** (klar): sökförslag medan man skriver (Photon), resultat visas så fort första källan svarar, Overpass-speglar parallellt + cache, "Jag stannar"-val med kostnadsberäkning, maxtid och P-förbud (rules.js), kort 2 aldrig dubblett.
-- **v0.3.x**: ev. Cloudflare Worker som cache/proxy så att användare inte behöver egen nyckel.
+- **v0.4** (klar): "Parkera här" (GPS), ankomsttid, betala-knapp med zonkod, delning, Cloudflare Worker (worker/) som håller nyckeln åt alla.
+- **senare**: Cloudflare Worker som cache/proxy så att användare inte behöver egen nyckel.
 - **v0.3**: Avgiftstider/zoner → korrekt "gratis just nu".
 - **v1**: Beläggning via operatörspartner, betalning via partner-API, ev. native app (CarPlay/Android Auto).
