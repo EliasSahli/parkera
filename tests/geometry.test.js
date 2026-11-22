@@ -102,3 +102,22 @@ test('Apple-stil: lager färgas och onödiga lager tas bort', () => {
   assert.equal(get(dark, 'label_city').paint['text-color'], PALETTE.dark.textMajor);
   assert.equal(style.layers.length, 9, 'originalet ändras inte');
 });
+
+import { prepare, borrowShapes } from '../core.js';
+
+test('P-hus utan form i Göteborgs data får formen från OSM-ytan den ligger i', () => {
+  const ring = [{ lat: 57.700, lon: 11.980 }, { lat: 57.700, lon: 11.986 }, { lat: 57.703, lon: 11.986 }, { lat: 57.703, lon: 11.980 }, { lat: 57.700, lon: 11.980 }];
+  const osm = fromOsm({ type: 'way', id: 77, tags: { amenity: 'parking', fee: 'yes', name: 'Heden', capacity: '700' }, geometry: ring });
+  // Göteborgs punkt ligger inne på ytan men långt från OSM-mittpunkten
+  const gbg = fromGbg({ Id: 'H', Name: 'P-hus Heden', ParkingSpaces: 728, ParkingCost: '32 kr/tim', Lat: 57.7005, Long: 11.9805, WKT: 'POINT (11.9805 57.7005)' }, 'private');
+  const list = prepare([osm, gbg], { lat: 57.701, lon: 11.982 });
+  assert.equal(list.length, 1, 'samma anläggning visas en gång');
+  assert.equal(list[0].name, 'P-hus Heden');
+  assert.equal(list[0].capacity, 728, 'Göteborgs uppgifter behålls');
+  assert.equal(list[0].geom.type, 'Polygon', 'formen kommer från OSM');
+  // Punkt utanför ytan lånar inte formen
+  const far = fromGbg({ Id: 'F', Name: 'Annat', Lat: 57.71, Long: 11.99 }, 'private');
+  const out = borrowShapes([osm, far]);
+  assert.equal(out.length, 2);
+  assert.equal(out[1].geom, null);
+});

@@ -1,5 +1,5 @@
 // core.js – ren logik utan nätverk eller DOM (testbar i Node)
-import { parseWKT, toWgs84, osmGeometry, centroid } from './geometry.js';
+import { parseWKT, toWgs84, osmGeometry, centroid, pointInGeom, isArea, hasShape } from './geometry.js';
 
 export function haversine(lat1, lon1, lat2, lon2) {
   const R = 6371000;
@@ -148,9 +148,25 @@ function num(v) {
 }
 
 // Slå ihop källor, räkna avstånd, ta bort dubbletter (inom 25 m med samma avgiftsstatus)
+// Göteborgs data saknar ofta form för p-hus och parkeringsytor (bara en punkt).
+// Ligger punkten inuti en OSM-yta är det samma anläggning: Göteborgs uppgifter
+// (pris, platser, lediga) behålls och formen lånas från OSM.
+export function borrowShapes(parkings) {
+  const areas = parkings.filter((p) => p && p.source === 'osm' && isArea(p.geom));
+  const used = new Set();
+  const out = parkings.filter(Boolean).map((p) => {
+    if (p.source !== 'gbg' || hasShape(p.geom)) return p;
+    const area = areas.find((a) => !used.has(a.id) && pointInGeom(p.lon, p.lat, a.geom))
+      || areas.find((a) => !used.has(a.id) && haversine(p.lat, p.lon, a.lat, a.lon) < 40);
+    if (!area) return p;
+    used.add(area.id);
+    return { ...p, geom: area.geom, capacity: p.capacity ?? area.capacity };
+  });
+  return out.filter((p) => !used.has(p.id));
+}
+
 export function prepare(parkings, dest) {
-  const withDist = parkings
-    .filter(Boolean)
+  const withDist = borrowShapes(parkings)
     .map((p) => ({ ...p, distance: haversine(dest.lat, dest.lon, p.lat, p.lon) }))
     .sort((a, b) => a.distance - b.distance);
   const out = [];
@@ -162,8 +178,12 @@ export function prepare(parkings, dest) {
       return q.fee === p.fee && d < 25;
     });
     if (dup) {
-      // föredra kommunal data (har pris/tidsgräns)
-      if (p.source === 'gbg' && dup.source !== 'gbg') out[out.indexOf(dup)] = p;
+      // föredra kommunal data (har pris/tidsgräns), men behåll formen om bara OSM har den
+      if (p.source === 'gbg' && dup.source !== 'gbg') {
+        out[out.indexOf(dup)] = hasShape(p.geom) || !hasShape(dup.geom) ? p : { ...p, geom: dup.geom };
+      } else if (!hasShape(dup.geom) && hasShape(p.geom)) {
+        out[out.indexOf(dup)] = { ...dup, geom: p.geom };
+      }
       continue;
     }
     out.push(p);

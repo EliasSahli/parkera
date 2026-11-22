@@ -15,10 +15,13 @@ const isDark = () => darkQuery.matches;
 
 const AREA_SRC = 'parkera-areas';
 
-// Färger för ytorna – grönt för platser som passar, grått för de som inte gör det
+// Ytornas färg matchar nålen: grönt = gratis, gult = avgift, grått = okänt / passar inte
 export const AREA_COLORS = {
-  fit: '#2fb34f',
-  fitDark: '#3ccf62',
+  free: '#2fb34f',
+  freeDark: '#3ccf62',
+  paid: '#e8a317',
+  paidDark: '#f0b429',
+  unknown: '#8e95a3',
   nofit: '#8e95a3',
 };
 
@@ -32,8 +35,11 @@ async function loadBaseStyle() {
 
 function addOverlayLayers() {
   if (map.getSource(AREA_SRC)) return;
-  const green = isDark() ? AREA_COLORS.fitDark : AREA_COLORS.fit;
-  const color = ['case', ['==', ['get', 'fits'], true], green, AREA_COLORS.nofit];
+  const dark = isDark();
+  const color = ['match', ['get', 'cls'],
+    'free', dark ? AREA_COLORS.freeDark : AREA_COLORS.free,
+    'paid', dark ? AREA_COLORS.paidDark : AREA_COLORS.paid,
+    AREA_COLORS.nofit];
   map.addSource(AREA_SRC, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
   // Fyllning för ytor (parkeringsplatser, p-hus)
   map.addLayer({
@@ -131,7 +137,7 @@ export function updateMap(data) {
   // Ytor
   const features = parkings
     .filter(({ p }) => p.geom && p.geom.type !== 'Point')
-    .map(({ p, fits, focus }) => ({ type: 'Feature', geometry: p.geom, properties: { id: p.id, fits, focus: Boolean(focus) } }));
+    .map(({ p, fits, focus, cls }) => ({ type: 'Feature', geometry: p.geom, properties: { id: p.id, fits, cls, focus: Boolean(focus) } }));
   map.getSource(AREA_SRC).setData({ type: 'FeatureCollection', features });
 
   // Nålar

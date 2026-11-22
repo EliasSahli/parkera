@@ -156,3 +156,22 @@ export function centroid(geom) {
   else walk(geom.coordinates);
   return n ? { lon: sx / n, lat: sy / n } : null;
 }
+
+// ---------- Punkt i yta ----------
+function inRing(x, y, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+export function pointInGeom(lon, lat, geom) {
+  if (!geom) return false;
+  if (geom.type === 'Polygon') return inRing(lon, lat, geom.coordinates[0]);
+  if (geom.type === 'MultiPolygon') return geom.coordinates.some((p) => inRing(lon, lat, p[0]));
+  return false;
+}
+export const isArea = (g) => Boolean(g) && (g.type === 'Polygon' || g.type === 'MultiPolygon');
+export const hasShape = (g) => Boolean(g) && g.type !== 'Point';
