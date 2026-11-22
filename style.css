@@ -186,3 +186,8 @@ button.ghost.wide { width: 100%; height: 44px; }
 .no-touch .pickwrap input { pointer-events: none; }
 
 .hint.other a { font-weight: 600; }
+
+.howto { background: var(--bg); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+.howto summary { font-weight: 600; cursor: pointer; }
+.howto ol { margin: 8px 0 6px; padding-left: 20px; display: grid; gap: 4px; }
+.tag.kind { background: #eef1f5; color: var(--ink); }

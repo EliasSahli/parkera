@@ -4,7 +4,7 @@
 // (GBG_APPID) här på servern och syns aldrig i webbläsaren. Svaren cachas en minut.
 //
 // Anrop:  GET /parking?lat=57.70&lon=11.97&radius=1500
-// Svar:   { time: [...PublicTimeParkings], toll: [...PublicTollParkings] }
+// Svar:   { time, toll, private, commuter } – listor från Göteborgs Stads ParkingService
 
 const UPSTREAM = 'https://data.goteborg.se/ParkingService/v2.1';
 const ALLOWED_ORIGINS = [
@@ -49,7 +49,7 @@ export default {
     const radius = Math.min(Math.max(Number(url.searchParams.get('radius')) || 1000, 100), 3000);
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return json({ error: 'lat/lon krävs' }, 400, origin);
     if (lat < BOUNDS.minLat || lat > BOUNDS.maxLat || lon < BOUNDS.minLon || lon > BOUNDS.maxLon) {
-      return json({ time: [], toll: [], outside: true }, 200, origin);
+      return json({ time: [], toll: [], private: [], commuter: [], outside: true }, 200, origin);
     }
 
     // Avrunda position (~50 m) så att närliggande sökningar delar cache
@@ -73,14 +73,20 @@ export default {
       const data = await res.json();
       return Array.isArray(data) ? data : [];
     };
-    const [time, toll] = await Promise.allSettled([get('PublicTimeParkings'), get('PublicTollParkings')]);
-    if (time.status === 'rejected' && toll.status === 'rejected') {
-      return json({ error: 'Göteborgs Stad svarar inte', detail: String(time.reason) }, 502, origin);
+    const lists = {
+      time: 'PublicTimeParkings',
+      toll: 'PublicTollParkings',
+      private: 'PrivateTollParkings',
+      commuter: 'CommuterParkings',
+    };
+    const keys = Object.keys(lists);
+    const results = await Promise.allSettled(keys.map((k) => get(lists[k])));
+    if (results.every((r) => r.status === 'rejected')) {
+      return json({ error: 'Göteborgs Stad svarar inte', detail: String(results[0].reason) }, 502, origin);
     }
-    const body = JSON.stringify({
-      time: time.status === 'fulfilled' ? time.value : [],
-      toll: toll.status === 'fulfilled' ? toll.value : [],
-    });
+    const out = {};
+    keys.forEach((k, i) => { out[k] = results[i].status === 'fulfilled' ? results[i].value : []; });
+    const body = JSON.stringify(out);
     if (cache) {
       ctx.waitUntil(cache.put(cacheKey, new Response(body, { headers: { 'Cache-Control': `public, max-age=${CACHE_SECONDS}` } })));
     }

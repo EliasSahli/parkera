@@ -234,6 +234,8 @@ async function fetchViaProxy(lat, lon, radius) {
   return [
     ...(data.time || []).map((it) => fromGbg(it, 'time')),
     ...(data.toll || []).map((it) => fromGbg(it, 'toll')),
+    ...(data.private || []).map((it) => fromGbg(it, 'private')),
+    ...(data.commuter || []).map((it) => fromGbg(it, 'commuter')),
   ].filter(Boolean);
 }
 
@@ -259,6 +261,8 @@ export async function fetchGbgParkings(appId, lat, lon, radius) {
   const calls = [
     ['PublicTimeParkings', 'time'], // gratis gatuparkering med tidsgräns
     ['PublicTollParkings', 'toll'], // avgiftsparkering (pris + ibland lediga platser)
+    ['PrivateTollParkings', 'private'], // p-hus, garage och privat mark med avgift
+    ['CommuterParkings', 'commuter'], // pendelparkeringar (ofta med lediga platser)
   ].map(async ([ep, kind]) => {
     const data = await gbgGet(`${GBG_BASE}/${ep}/${encodeURIComponent(appId)}${qs}`);
     return (Array.isArray(data) ? data : []).map((it) => fromGbg(it, kind)).filter(Boolean);

@@ -65,29 +65,53 @@ export function fromOsm(el) {
 }
 
 // Göteborgs Stads ParkingService -> intern parkering (fältnamn hanteras tolerant)
+// kind: 'time' = gratis gatuparkering, 'toll' = avgift på gata,
+//       'private' = p-hus/garage/privat mark med avgift, 'commuter' = pendelparkering
+const GBG_KIND = {
+  time: { label: 'Gatuparkering (tidsbegränsad)', fallback: 'Gatuparkering' },
+  toll: { label: 'Avgiftsparkering', fallback: 'Avgiftsparkering' },
+  private: { label: 'Parkeringshus / anläggning', fallback: 'Parkeringsanläggning' },
+  commuter: { label: 'Pendelparkering', fallback: 'Pendelparkering' },
+};
+
+// Avgiftsstatus ur fritext (pendelparkeringar m.fl.)
+export function feeFromText(text) {
+  const t = String(text || '').toLowerCase();
+  if (!t.trim()) return 'unknown';
+  if (/gratis|avgiftsfri|ingen avgift|kostnadsfri|^0 ?kr|utan avgift/.test(t)) return 'free';
+  if (/\d\s*(kr|:-|sek)|avgift|taxa/.test(t)) return 'paid';
+  return 'unknown';
+}
+
 export function fromGbg(item, kind) {
   const lat = num(item.Lat ?? item.lat ?? item.Latitude);
   const lon = num(item.Long ?? item.Lon ?? item.lng ?? item.Longitude);
   if (lat == null || lon == null) return null;
-  const isFree = kind === 'time';
-  const price = item.ParkingCost || item.ParkingCharge ||
+  const k = GBG_KIND[kind] || GBG_KIND.toll;
+  const priceText = item.ParkingCost || item.ParkingCharge ||
     (item.CurrentParkingCost != null && item.CurrentParkingCost !== '' ? `${item.CurrentParkingCost} kr/h` : null);
+  let fee;
+  if (kind === 'time') fee = 'free';
+  else if (kind === 'commuter') fee = feeFromText(priceText);
+  else fee = feeFromText(priceText) === 'free' ? 'free' : 'paid';
+  const defaultOwner = kind === 'private' ? null : 'Göteborgs Stad';
   return {
     id: `gbg-${kind}-${item.Id ?? `${lat},${lon}`}`,
     source: 'gbg',
-    name: item.Name || (isFree ? 'Gatuparkering' : 'Avgiftsparkering'),
-    kind: isFree ? 'Gatuparkering (tidsbegränsad)' : 'Avgiftsparkering',
+    gbgKind: kind,
+    name: item.Name || k.fallback,
+    kind: k.label,
     lat,
     lon,
-    fee: isFree ? 'free' : 'paid',
-    price: isFree ? null : price,
+    fee,
+    price: fee === 'free' ? null : priceText,
     maxStay: item.MaxParkingTime || null,
     capacity: num(item.ParkingSpaces),
     freeSpaces: freshFreeSpaces(item),
     currentRate: num(item.CurrentParkingCost),
     payCode: item.PhoneParkingCode ? String(item.PhoneParkingCode).trim() : null,
     access: 'public',
-    operator: item.Owner || 'Göteborgs Stad',
+    operator: item.Owner || defaultOwner,
     extra: item.ExtraInfo || null,
     restriction: item.MaxParkingTimeLimitation || null,
   };
@@ -126,9 +150,12 @@ export function prepare(parkings, dest) {
     .sort((a, b) => a.distance - b.distance);
   const out = [];
   for (const p of withDist) {
-    const dup = out.find(
-      (q) => q.fee === p.fee && haversine(p.lat, p.lon, q.lat, q.lon) < 25
-    );
+    const dup = out.find((q) => {
+      const d = haversine(p.lat, p.lon, q.lat, q.lon);
+      // p-hus/garage är stora: samma anläggning kan ha olika mittpunkt i olika källor
+      if (isGarage(p) && isGarage(q) && p.source !== q.source) return d < 90;
+      return q.fee === p.fee && d < 25;
+    });
     if (dup) {
       // föredra kommunal data (har pris/tidsgräns)
       if (p.source === 'gbg' && dup.source !== 'gbg') out[out.indexOf(dup)] = p;
@@ -137,6 +164,10 @@ export function prepare(parkings, dest) {
     out.push(p);
   }
   return out;
+}
+
+function isGarage(p) {
+  return p.gbgKind === 'private' || /Parkeringshus|Garage/.test(p.kind || '');
 }
 
 // Ett fullt känt objekt räknas som fullt och väljs inte som förslag
@@ -217,6 +248,14 @@ export const PAY_APPS = {
     ios: 'https://apps.apple.com/se/app/id449594317',
     android: 'https://play.google.com/store/search?q=EasyPark&c=apps',
   },
+  pgbgShortcut: {
+    name: 'Parkering Göteborg',
+    // iPhone-genväg som öppnar appen (skapas en gång av användaren, se inställningar)
+    open: 'shortcuts://run-shortcut?name=' + encodeURIComponent('Betala parkering'),
+    ios: 'https://apps.apple.com/se/app/id1184264972',
+    android: 'https://play.google.com/store/search?q=Parkering%20G%C3%B6teborg&c=apps',
+    iosOnly: true,
+  },
   pgbg: {
     name: 'Parkering Göteborg',
     open: null,
@@ -226,9 +265,13 @@ export const PAY_APPS = {
 };
 export function payAppUrl(key, isIos) {
   const a = PAY_APPS[key] || PAY_APPS.parkster;
+  if (a.iosOnly && !isIos) return a.android;
   return a.open || (isIos ? a.ios : a.android);
 }
-export const opensDirectly = (key) => Boolean((PAY_APPS[key] || PAY_APPS.parkster).open);
+export const opensDirectly = (key, isIos = true) => {
+  const a = PAY_APPS[key] || PAY_APPS.parkster;
+  return Boolean(a.open) && (!a.iosOnly || isIos);
+};
 
 // Delningslänk till appen, valfritt med nyckel
 export function shareUrl(base, appId) {

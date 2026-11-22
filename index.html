@@ -96,11 +96,22 @@
     </label>
     <label>Betala med
       <select id="payApp">
+        <option value="pgbgShortcut">Parkering Göteborg (via Genväg, iPhone)</option>
         <option value="parkster">Parkster (öppnas direkt)</option>
         <option value="easypark">EasyPark (öppnas direkt)</option>
         <option value="pgbg">Parkering Göteborg (via App Store)</option>
       </select>
     </label>
+    <details class="howto" id="shortcutHowto">
+      <summary>Engångsinställning: öppna Parkering Göteborg direkt</summary>
+      <ol>
+        <li>Öppna appen <b>Genvägar</b> på iPhone och tryck <b>+</b>.</li>
+        <li>Tryck <b>Lägg till åtgärd</b>, sök <b>Öppna app</b> och välj den.</li>
+        <li>Tryck på det blå ordet <b>App</b> och välj <b>Parkering Göteborg</b>.</li>
+        <li>Tryck på namnet överst och döp genvägen till exakt <b>Betala parkering</b>. Tryck <b>Klar</b>.</li>
+      </ol>
+      <p class="hint">Betala-knappen kopierar zonkoden och startar genvägen, som öppnar appen. Första gången frågar iPhone om tillåtelse – välj Tillåt alltid.</p>
+    </details>
     <label>Sökradie runt målet
       <select id="radius">
         <option value="1000">1 km</option>

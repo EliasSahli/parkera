@@ -10,7 +10,11 @@ beforeEach(() => {
     calls.push(url);
     const data = url.includes('PublicTimeParkings')
       ? [{ Id: 'T', Name: 'Vasagatan', Lat: 57.7, Long: 11.97, MaxParkingTime: '30 min' }]
-      : [{ Id: 'P', Name: 'Storgatan', Lat: 57.701, Long: 11.971, PhoneParkingCode: '4115', ParkingCost: '34 kr/tim 8-22 alla dagar' }];
+      : url.includes('PublicTollParkings')
+        ? [{ Id: 'P', Name: 'Storgatan', Lat: 57.701, Long: 11.971, PhoneParkingCode: '4115', ParkingCost: '34 kr/tim 8-22 alla dagar' }]
+        : url.includes('PrivateTollParkings')
+          ? [{ Id: 'G', Name: 'P-hus Nordstan', Owner: 'Parkering Göteborg', FreeSpaces: 120, ParkingCost: '40 kr/tim', Lat: 57.708, Long: 11.968 }]
+          : [{ Id: 'C', Name: 'Partille centrum pendel', FreeSpaces: 12, ParkingCost: 'Gratis', Lat: 57.739, Long: 12.106 }];
     return new Response(JSON.stringify(data), { status: 200 });
   };
 });
@@ -26,7 +30,9 @@ test('Proxy: hämtar båda listorna och lägger nyckeln i anropet, inte i svaret
   const body = await res.json();
   assert.equal(body.time[0].Name, 'Vasagatan');
   assert.equal(body.toll[0].PhoneParkingCode, '4115');
-  assert.equal(calls.length, 2);
+  assert.equal(body.private[0].Name, 'P-hus Nordstan');
+  assert.equal(body.commuter[0].FreeSpaces, 12);
+  assert.equal(calls.length, 4);
   assert.ok(calls.every((u) => u.includes('/hemlig-nyckel?')));
   assert.ok(!JSON.stringify(body).includes('hemlig'));
   assert.equal(res.headers.get('Access-Control-Allow-Origin'), 'https://eliassahli.github.io');
@@ -34,7 +40,7 @@ test('Proxy: hämtar båda listorna och lägger nyckeln i anropet, inte i svaret
 
 test('Proxy: utanför Göteborg anropas inte API:t', async () => {
   const res = await worker.fetch(req('/parking?lat=59.33&lon=18.06'), env, ctx);
-  assert.deepEqual(await res.json(), { time: [], toll: [], outside: true });
+  assert.deepEqual(await res.json(), { time: [], toll: [], private: [], commuter: [], outside: true });
   assert.equal(calls.length, 0);
 });
 
@@ -64,4 +70,34 @@ test('Zonkod, delningslänk och betalapp', () => {
   assert.match(payAppUrl('pgbg', true), /apps\.apple\.com\/se\/app\/id1184264972/);
   assert.match(payAppUrl('pgbg', false), /play\.google\.com/);
   assert.equal(payAppUrl('okänd', true), 'https://www.parkster.com/app');
+});
+
+import { feeFromText, prepare, fromOsm, opensDirectly } from '../core.js';
+
+test('P-hus och pendelparkeringar från Göteborgs data', () => {
+  const g = fromGbg({ Id: 'G', Name: 'P-hus Nordstan', Owner: 'Parkering Göteborg', FreeSpaces: 120, ParkingCost: '40 kr/tim', Lat: 57.708, Long: 11.968 }, 'private');
+  assert.equal(g.fee, 'paid');
+  assert.equal(g.kind, 'Parkeringshus / anläggning');
+  assert.equal(g.operator, 'Parkering Göteborg');
+  const c1 = fromGbg({ Name: 'Pendel A', ParkingCost: 'Gratis', Lat: 57.7, Long: 12.1 }, 'commuter');
+  const c2 = fromGbg({ Name: 'Pendel B', ParkingCost: '20 kr/dygn', Lat: 57.7, Long: 12.1 }, 'commuter');
+  const c3 = fromGbg({ Name: 'Pendel C', Lat: 57.7, Long: 12.1 }, 'commuter');
+  assert.deepEqual([c1.fee, c2.fee, c3.fee], ['free', 'paid', 'unknown']);
+  assert.equal(feeFromText('Avgiftsfri'), 'free');
+});
+
+test('Samma p-hus från OSM och Göteborg slås ihop även om mittpunkterna skiljer 70 m', () => {
+  const d = 1 / 111320;
+  const gbg = fromGbg({ Id: 'G', Name: 'P-hus Nordstan', ParkingCost: '40 kr/tim', Lat: 57.708, Long: 11.968 }, 'private');
+  const osm = fromOsm({ type: 'way', id: 9, center: { lat: 57.708 + 70 * d, lon: 11.968 }, tags: { amenity: 'parking', parking: 'multi-storey', fee: 'yes' } });
+  const list = prepare([osm, gbg], { lat: 57.708, lon: 11.968 });
+  assert.equal(list.length, 1);
+  assert.equal(list[0].source, 'gbg');
+});
+
+test('Genväg för Parkering Göteborg bara på iPhone', () => {
+  assert.equal(payAppUrl('pgbgShortcut', true), 'shortcuts://run-shortcut?name=Betala%20parkering');
+  assert.match(payAppUrl('pgbgShortcut', false), /play\.google\.com/);
+  assert.equal(opensDirectly('pgbgShortcut', true), true);
+  assert.equal(opensDirectly('pgbgShortcut', false), false);
 });

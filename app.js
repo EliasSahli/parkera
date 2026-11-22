@@ -399,6 +399,8 @@ function renderList() {
       rule,
       p.freeSpaces != null ? `<span class="tag occ">${p.freeSpaces} lediga</span>` : '',
       p.access === 'customers' ? '<span class="tag cust">Endast kunder</span>' : '',
+      p.gbgKind === 'private' ? '<span class="tag kind">P-hus / anläggning</span>' : '',
+      p.gbgKind === 'commuter' ? '<span class="tag kind">Pendelparkering</span>' : '',
       p.source === 'gbg' ? '<span class="tag gbg">Göteborgs Stad</span>' : '',
     ].join('');
     const notes = [p.extra, p.restriction].filter(Boolean).map((t) => `<div class="m">${escapeHtml(t)}</div>`).join('');
@@ -497,9 +499,12 @@ function openPay(p) {
   $('payPrice').textContent = [p.price, p.eval?.cost != null ? `Uppskattat: ${p.eval.cost} kr för ${fmtDuration(state.dur)}` : ''].filter(Boolean).join(' · ');
   $('payCode').textContent = p.payCode;
   setPayLink($('payOpen'), settings.payApp);
-  $('payOpen').textContent = opensDirectly(settings.payApp) ? `Öppna ${app.name}` : `Öppna ${app.name} (App Store)`;
-  // Andra appar som alternativ
-  const others = Object.keys(PAY_APPS).filter((k) => k !== settings.payApp);
+  $('payOpen').textContent = opensDirectly(settings.payApp, isIos) ? `Öppna ${app.name}` : `Öppna ${app.name} (App Store)`;
+  $('payHow').textContent = settings.payApp === 'pgbgShortcut'
+    ? 'Zonkoden kopieras och genvägen "Betala parkering" öppnar appen. Klistra in koden i appens sökfält. Saknas genvägen? Se ⚙︎ → Betala med.'
+    : 'Zonkoden kopieras när du trycker. Klistra in den i appens sökfält. Kontrollera alltid zonkoden på skylten.';
+  // Andra appar som alternativ (samma app bara en gång)
+  const others = Object.keys(PAY_APPS).filter((k) => k !== settings.payApp && !(PAY_APPS[k].name === app.name) && !(PAY_APPS[k].iosOnly && !isIos));
   const box = $('payOthers');
   box.innerHTML = 'Eller betala med ';
   others.forEach((k, i) => {
@@ -514,7 +519,7 @@ function openPay(p) {
 function setPayLink(a, key) {
   a.href = payAppUrl(key, isIos);
   // Universal Links öppnar appen bäst i samma flik; appbutiken i ny flik
-  if (opensDirectly(key)) { a.removeAttribute('target'); a.removeAttribute('rel'); }
+  if (opensDirectly(key, isIos)) { a.removeAttribute('target'); a.removeAttribute('rel'); }
   else { a.target = '_blank'; a.rel = 'noopener'; }
   a.onclick = () => { copyCode(); };
 }
@@ -590,6 +595,9 @@ function openSettings(open) {
 }
 $('navApp').value = settings.navApp;
 $('payApp').value = settings.payApp;
+const paintHowto = () => { $('shortcutHowto').hidden = $('payApp').value !== 'pgbgShortcut' || !isIos; };
+$('payApp').addEventListener('change', () => { paintHowto(); $('shortcutHowto').open = $('payApp').value === 'pgbgShortcut'; });
+paintHowto();
 $('radius').value = String(settings.radius);
 $('appId').value = settings.appId;
 $('settingsBtn').addEventListener('click', () => { paintShare(); openSettings(true); });
