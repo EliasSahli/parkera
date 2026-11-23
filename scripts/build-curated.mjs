@@ -44,14 +44,21 @@ export async function buildCurated({ source, fetchImpl = fetch, previous = null,
   const missing = [];
   for (const e of source.items) {
     let lat = null, lon = null, geom = null, osmId = null;
-    try {
-      if (e.osmName) {
+    if (e.osmName) {
+      try {
         const hit = await overpassByName(e, fetchImpl);
         if (hit) { ({ lat, lon, geom } = hit.p); osmId = hit.p.id; }
-        await sleep(pause);
+      } catch (err) {
+        console.warn(`${e.name} (OSM): ${err.message}`);
       }
-      if (lat == null && e.address) {
-        const pos = await nominatim(e.address, fetchImpl);
+      await sleep(pause);
+    }
+    try {
+      // Namnet hittades inte som parkering i OSM: sök platsen (adress, annars namn + ort).
+      // Formen lånas då i appen från närmaste OSM-yta (borrowShapes).
+      const query = e.address || `${e.name}, ${e.municipality.replace(/ kommun$/, '').replace(/s$/, '')}`;
+      if (lat == null) {
+        const pos = await nominatim(query, fetchImpl);
         if (pos) ({ lat, lon } = pos);
         await sleep(pause); // Nominatims regler: högst ett anrop per sekund
       }
