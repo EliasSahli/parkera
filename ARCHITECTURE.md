@@ -1,4 +1,4 @@
-# Parkera – arkitektur (testversion v0.6)
+# Parkera – arkitektur (testversion v0.8)
 
 ## Mål för testversionen
 Skriv in en adress → få tre val → tryck **Kör** → navigeringen startar i Apple Maps / Google Maps / Waze.
@@ -60,6 +60,7 @@ Plus en lista med fler parkeringar som kan filtreras på avstånd och gratis/avg
 - **v0.4** (klar): "Parkera här" (GPS), ankomsttid, betala-knapp med zonkod, delning, Cloudflare Worker (worker/) som håller nyckeln åt alla.
 - **v0.5** (klar): p-hus/anläggningar (PrivateTollParkings) och pendelparkeringar (CommuterParkings) från Göteborgs API; Parkering Göteborg öppnas via iPhone-genväg.
 - **v0.6** (klar): Apple-lik vektorkarta (ljust/mörkt läge), parkeringsytor som gröna konturer (Göteborgs WKT i SWEREF 99, OSM-ytor), mörkt läge för hela appen.
+- **v0.7–0.8** (klar): regeltolkning testad mot verklig data, nattlig ögonblicksbild (GitHub Actions → data/gbg.json), uppskattade ytor/kapacitet, Rapportera fel.
 - **senare**: Cloudflare Worker som cache/proxy så att användare inte behöver egen nyckel.
 - **v0.3**: Avgiftstider/zoner → korrekt "gratis just nu".
 - **v1**: Beläggning via operatörspartner, betalning via partner-API, ev. native app (CarPlay/Android Auto).

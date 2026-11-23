@@ -101,3 +101,15 @@ test('Genväg för Parkering Göteborg bara på iPhone', () => {
   assert.equal(opensDirectly('pgbgShortcut', true), true);
   assert.equal(opensDirectly('pgbgShortcut', false), false);
 });
+
+import { reportUrl } from '../core.js';
+test('Felrapport: förifylld GitHub-issue med källtexter och tolkning', () => {
+  const url = reportUrl({ id: 'gbg-private-792', name: 'Nordhemsskolan', source: 'gbg', gbgKind: 'private', lat: 57.69434, lon: 11.94924,
+    price: 'P-tillstånd erfordras helgfri mån-fre 07-17.', eval: { ok: false, reason: 'kräver tillstånd' } }, { dur: 30, arrival: '2026-11-23 11:56', version: '0.8.0' });
+  const u = new URL(url);
+  assert.equal(u.origin + u.pathname, 'https://github.com/EliasSahli/parkera/issues/new');
+  assert.equal(u.searchParams.get('title'), 'Fel vid Nordhemsskolan');
+  assert.match(u.searchParams.get('body'), /Pris \(källa\): P-tillstånd erfordras/);
+  assert.match(u.searchParams.get('body'), /passar inte – kräver tillstånd/);
+  assert.ok(url.length < 6000);
+});

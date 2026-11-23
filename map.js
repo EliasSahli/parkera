@@ -48,14 +48,25 @@ function addOverlayLayers() {
     type: 'fill',
     source: AREA_SRC,
     filter: ['in', ['geometry-type'], ['literal', ['Polygon', 'MultiPolygon']]],
-    paint: { 'fill-color': color, 'fill-opacity': ['case', ['==', ['get', 'fits'], true], 0.22, 0.12] },
+    paint: {
+      'fill-color': color,
+      'fill-opacity': ['case', ['==', ['get', 'est'], true], 0.1, ['==', ['get', 'fits'], true], 0.22, 0.12],
+    },
+  });
+  // Uppskattad yta (ingen källa har formen) – streckad kontur
+  map.addLayer({
+    id: 'parkera-outline-est',
+    type: 'line',
+    source: AREA_SRC,
+    filter: ['all', ['in', ['geometry-type'], ['literal', ['Polygon', 'MultiPolygon']]], ['==', ['get', 'est'], true]],
+    paint: { 'line-color': color, 'line-width': 1.6, 'line-opacity': 0.8, 'line-dasharray': [2, 2] },
   });
   // Kontur för ytor
   map.addLayer({
     id: 'parkera-outline',
     type: 'line',
     source: AREA_SRC,
-    filter: ['in', ['geometry-type'], ['literal', ['Polygon', 'MultiPolygon']]],
+    filter: ['all', ['in', ['geometry-type'], ['literal', ['Polygon', 'MultiPolygon']]], ['!=', ['get', 'est'], true]],
     paint: {
       'line-color': color,
       'line-width': ['interpolate', ['linear'], ['zoom'], 14, ['case', ['get', 'focus'], 2, 1.2], 18, ['case', ['get', 'focus'], 4, 2.5]],
@@ -146,7 +157,7 @@ export function updateMap(data) {
     // GeometryCollection delas upp så att ytor och remsor får rätt lager
     .flatMap(({ p, fits, focus, cls }) => (p.geom.type === 'GeometryCollection' ? p.geom.geometries : [p.geom])
       .filter((g) => g.type !== 'Point')
-      .map((g) => ({ type: 'Feature', geometry: g, properties: { id: p.id, fits, cls, focus: Boolean(focus) } })));
+      .map((g) => ({ type: 'Feature', geometry: g, properties: { id: p.id, fits, cls, focus: Boolean(focus), est: Boolean(p.geomEst) } })));
   map.getSource(AREA_SRC).setData({ type: 'FeatureCollection', features });
 
   // Nålar

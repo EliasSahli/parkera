@@ -1,0 +1,58 @@
+# Hämtar Göteborgs Stads parkeringsdata varje natt och sparar den som data/gbg.json.
+# Kräver repository secret GBG_APPID (Settings → Secrets and variables → Actions).
+name: Göteborgsdata (nattlig)
+
+on:
+  schedule:
+    - cron: '17 2 * * *' # 03:17 svensk vintertid
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pages: write
+
+concurrency:
+  group: gbg-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Hämta och tolka Göteborgs data
+        env:
+          GBG_APPID: ${{ secrets.GBG_APPID }}
+        run: |
+          if [ -z "$GBG_APPID" ]; then
+            echo "::warning::Secret GBG_APPID saknas – hoppar över. Lägg till den i Settings → Secrets and variables → Actions."
+            exit 0
+          fi
+          node scripts/build-gbg-snapshot.mjs
+
+      - name: Spara om datan ändrats
+        id: commit
+        run: |
+          git config user.name "parkera-bot"
+          git config user.email "parkera-bot@users.noreply.github.com"
+          git add data/gbg.json 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Ingen förändring."
+          else
+            git commit -m "Göteborgsdata $(date -u +%Y-%m-%d)"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Commits gjorda av en workflow startar inte Pages automatiskt – be om en ny publicering
+      - name: Publicera sidan igen
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api --method POST "repos/${{ github.repository }}/pages/builds" || echo "::warning::Kunde inte starta Pages-bygget, det sker vid nästa push."

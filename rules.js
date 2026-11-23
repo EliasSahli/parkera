@@ -338,7 +338,9 @@ export function fmtDuration(min) {
 // ---------- Bedömning ----------
 // -> { ok, reason, cost (kr|null), approx }
 export function evaluate(p, start, durMin) {
-  const all = [p.extra, p.restriction].filter(Boolean).join('. ');
+  // Göteborgs fält blandas: tillståndskrav kan stå i prisfältet och priset i ExtraInfo
+  // (t.ex. Nordhemsskolan: ParkingCost = "P-tillstånd erfordras…", ExtraInfo = "10 kr/tim…").
+  const all = [p.price, p.extra, p.restriction].filter(Boolean).join('. ');
   const fail = (reason) => ({ ok: false, reason, cost: null, approx: false });
 
   // Maxtid, och när den gäller
@@ -362,8 +364,8 @@ export function evaluate(p, start, durMin) {
 
   if (p.fee === 'free') return { ok: true, reason: '', cost: 0, approx: false };
   if (p.fee === 'paid') {
-    const feeSeason = parseFeeSeason([p.price, all].filter(Boolean).join('. '));
-    const parsed = parsePrice([p.price, capText(all)].filter(Boolean).join('. '));
+    const feeSeason = parseFeeSeason(all);
+    const parsed = parsePrice([p.price, p.extra, capText(all)].filter(Boolean).join('. '));
     let cost = costFor(parsed, start, durMin, { feeSeason });
     let approx = false;
     if (cost == null && p.currentRate != null) {

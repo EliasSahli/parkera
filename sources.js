@@ -1,5 +1,5 @@
 // sources.js – hämtar data från nätet (körs i webbläsaren)
-import { fromOsm, fromGbg, buildOverpassQuery } from './core.js';
+import { fromOsm, fromGbg, buildOverpassQuery, haversine } from './core.js';
 import { PROXY_URL } from './config.js';
 
 // Göteborgsområdet – styr adressökningen hit
@@ -241,7 +241,31 @@ async function fetchViaProxy(lat, lon, radius) {
 
 // onPartial(items): anropas varje gång en lista har kommit, så att appen kan visa den direkt
 // i stället för att vänta på den långsammaste (pendelparkeringarna svarade inte vid test).
+// ---------- Nattlig ögonblicksbild (data/gbg.json, byggs av GitHub Actions) ----------
+// Hela Göteborgs data, färdigtolkad. Ingen nyckel behövs i webbläsaren och sökningen blir direkt.
+const SNAPSHOT_MAX_AGE = 8 * 24 * 3600 * 1000;
+let snapshotPromise = null;
+export function loadSnapshot() {
+  if (!snapshotPromise) {
+    snapshotPromise = fetch('data/gbg.json', { cache: 'no-cache' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((snap) => {
+        if (!snap || !Array.isArray(snap.items) || !snap.items.length) return null;
+        if (Date.now() - Date.parse(snap.generated) > SNAPSHOT_MAX_AGE) return null; // för gammal
+        return snap;
+      })
+      .catch(() => null);
+  }
+  return snapshotPromise;
+}
+
 export async function fetchGbgParkings(appId, lat, lon, radius, onPartial = null) {
+  const snap = await loadSnapshot();
+  if (snap) {
+    const items = snap.items.filter((p) => haversine(lat, lon, p.lat, p.lon) <= radius + 60);
+    if (onPartial) onPartial(items);
+    return { items, ok: true, reason: '', transport: 'snapshot', generated: snap.generated };
+  }
   if (PROXY_URL) {
     const key = `gbgp:${lat.toFixed(4)},${lon.toFixed(4)},${radius}`;
     const hit = cacheGet(key, 3 * 60 * 1000);

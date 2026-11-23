@@ -1,5 +1,8 @@
 // core.js – ren logik utan nätverk eller DOM (testbar i Node)
-import { parseWKT, toWgs84, osmGeometry, centroid, pointInGeom, isArea, hasShape } from './geometry.js';
+import {
+  parseWKT, toWgs84, osmGeometry, centroid, pointInGeom, isArea, hasShape,
+  distToAreaM, areaM2, circlePolygon, M2_PER_SPACE,
+} from './geometry.js';
 
 export function haversine(lat1, lon1, lat2, lon2) {
   const R = 6371000;
@@ -96,7 +99,7 @@ export function fromGbg(item, kind) {
     (item.CurrentParkingCost != null && item.CurrentParkingCost !== '' ? `${item.CurrentParkingCost} kr/h` : null);
   let fee;
   if (kind === 'time') fee = 'free';
-  else if (kind === 'commuter') fee = feeFromText(priceText);
+  else if (kind === 'commuter') fee = feeFromText([priceText, item.ExtraInfo].filter(Boolean).join('. '));
   else fee = feeFromText(priceText) === 'free' ? 'free' : 'paid';
   const defaultOwner = kind === 'private' ? null : 'Göteborgs Stad';
   return {
@@ -156,13 +159,37 @@ export function borrowShapes(parkings) {
   const used = new Set();
   const out = parkings.filter(Boolean).map((p) => {
     if (p.source !== 'gbg' || hasShape(p.geom)) return p;
-    const area = areas.find((a) => !used.has(a.id) && pointInGeom(p.lon, p.lat, a.geom))
-      || areas.find((a) => !used.has(a.id) && haversine(p.lat, p.lon, a.lat, a.lon) < 40);
+    // Punkten inuti en yta, annars närmaste yta vars kant ligger inom 35 m (t.ex. punkt vid infarten)
+    let area = areas.find((a) => !used.has(a.id) && pointInGeom(p.lon, p.lat, a.geom));
+    if (!area) {
+      let best = 35;
+      for (const a of areas) {
+        if (used.has(a.id) || haversine(p.lat, p.lon, a.lat, a.lon) > 400) continue;
+        const d = distToAreaM(p.lon, p.lat, a.geom);
+        if (d < best) { best = d; area = a; }
+      }
+    }
     if (!area) return p;
     used.add(area.id);
     return { ...p, geom: area.geom, capacity: p.capacity ?? area.capacity };
   });
   return out.filter((p) => !used.has(p.id));
+}
+
+// Form och kapacitet där källorna saknar dem:
+//  - ingen form alls -> ungefärlig cirkel efter antal platser (ritas streckad på kartan)
+//  - markparkering med yta men utan antal platser -> uppskattat antal (yta / 25 m²)
+export function addEstimates(p) {
+  let q = p;
+  if (!hasShape(q.geom)) {
+    const spaces = Math.max(q.capacity ?? 15, 6);
+    const r = Math.min(45, Math.max(9, Math.sqrt((spaces * M2_PER_SPACE) / Math.PI)));
+    q = { ...q, geom: circlePolygon(q.lon, q.lat, r), geomEst: true };
+  } else if (q.capacity == null && isArea(q.geom) && !/Parkeringshus|Garage|anläggning/i.test(q.kind || '')) {
+    const est = Math.round(areaM2(q.geom) / M2_PER_SPACE);
+    if (est >= 2) q = { ...q, capacityEst: est };
+  }
+  return q;
 }
 
 export function prepare(parkings, dest) {
@@ -188,7 +215,8 @@ export function prepare(parkings, dest) {
     }
     out.push(p);
   }
-  return out;
+  // Uppskattningar sist, så att riktiga former från andra källor vinner vid sammanslagning
+  return out.map(addEstimates);
 }
 
 function isGarage(p) {
@@ -305,4 +333,28 @@ export function shareUrl(base, appId) {
   u.hash = '';
   if (appId) u.searchParams.set('appid', appId);
   return u.toString();
+}
+
+// ---------- Felrapport ----------
+// Förifylld GitHub-issue med allt som behövs för att återskapa felet
+export const REPO_ISSUES = 'https://github.com/EliasSahli/parkera/issues/new';
+export function reportUrl(p, ctx = {}) {
+  const lines = [
+    '**Vad är fel?**',
+    '(skriv här: t.ex. "skylten säger max 2 tim", "platsen finns inte", "fel pris")',
+    '',
+    '---',
+    `Plats: ${p.name} (${p.id})`,
+    `Källa: ${p.source}${p.gbgKind ? ` / ${p.gbgKind}` : ''} · ${p.kind || ''}`,
+    `Position: ${p.lat?.toFixed?.(5)}, ${p.lon?.toFixed?.(5)}`,
+    p.price ? `Pris (källa): ${p.price}` : '',
+    p.maxStay ? `Maxtid (källa): ${p.maxStay}` : '',
+    p.restriction ? `Tidsgräns (källa): ${p.restriction}` : '',
+    p.extra ? `Övrigt (källa): ${p.extra}` : '',
+    `Appens tolkning: ${p.eval ? (p.eval.ok ? `passar, kostnad ${p.eval.cost ?? 'okänd'} kr` : `passar inte – ${p.eval.reason}`) : '–'}`,
+    ctx.dur ? `Vald tid: ${ctx.dur} min från ${ctx.arrival}` : '',
+    ctx.version ? `Appversion: ${ctx.version}` : '',
+  ].filter((l) => l !== '');
+  const q = new URLSearchParams({ title: `Fel vid ${p.name}`, body: lines.join('\n'), labels: 'datafel' });
+  return `${REPO_ISSUES}?${q}`;
 }

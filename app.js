@@ -1,15 +1,17 @@
 // app.js – UI och flöde
 import {
   prepare, pickOptions, applyFilters, navUrl, feeLabel, formatDistance, walkMinutes, fits,
-  PAY_APPS, payAppUrl, opensDirectly, shareUrl,
+  PAY_APPS, payAppUrl, opensDirectly, shareUrl, reportUrl,
 } from './core.js';
 import { evaluate, fmtDuration } from './rules.js';
 import { initMap, updateMap, openPopupFor } from './map.js';
 import {
-  geocode, suggest, reverseGeocode, fetchOsmParkings, fetchGbgParkings, testGbgKey, hasProxy,
+  geocode, suggest, reverseGeocode, fetchOsmParkings, fetchGbgParkings, testGbgKey, hasProxy, loadSnapshot,
 } from './sources.js';
 
 const $ = (id) => document.getElementById(id);
+const APP_VERSION = '0.8.0';
+const reportLink = (p) => reportUrl(p, { dur: state.dur, arrival: arrival().toLocaleString('sv-SE'), version: APP_VERSION });
 
 // ---------- Inställningar (lagras lokalt i webbläsaren) ----------
 const store = {
@@ -247,7 +249,9 @@ async function chooseDest(dest) {
     .then((res) => {
       parts.gbg = res.items;
       $('gbgCredit').hidden = !res.items.length;
-      if (settings.appId) {
+      if (res.transport === 'snapshot') {
+        setGbgState([`Göteborgs data: uppdaterad ${new Date(res.generated).toLocaleDateString('sv-SE', { day: 'numeric', month: 'short' })} – ingen egen nyckel behövs.`, 'ok']);
+      } else if (settings.appId) {
         setGbgState(res.ok
           ? [`Kopplad till Göteborgs Stad – ${res.items.length} platser vid senaste sökningen.`, 'ok']
           : [`Göteborgs Stad svarade inte (${res.reason}). Appen använder bara OpenStreetMap.`, 'bad']);
@@ -405,8 +409,9 @@ function renderList() {
       p.gbgKind === 'commuter' ? '<span class="tag kind">Pendelparkering</span>' : '',
       p.source === 'gbg' ? '<span class="tag gbg">Göteborgs Stad</span>' : '',
     ].join('');
-    const notes = [p.extra, p.restriction].filter(Boolean).map((t) => `<div class="m">${escapeHtml(t)}</div>`).join('');
-    const cap = p.capacity ? ` · ${p.capacity} platser` : '';
+    const notes = [p.extra, p.restriction].filter(Boolean).map((t) => `<div class="m">${escapeHtml(t)}</div>`).join('')
+      + `<div class="m"><a class="report" href="${escapeHtml(reportLink(p))}" target="_blank" rel="noopener">Rapportera fel</a></div>`;
+    const cap = p.capacity ? ` · ${p.capacity} platser` : p.capacityEst ? ` · ca ${p.capacityEst} platser` : '';
     li.innerHTML = `<div>
         <div class="n">${escapeHtml(p.name)}</div>
         <div class="m">${tags}</div>
@@ -439,9 +444,11 @@ function renderMap(nearest, nearestFree) {
     parkings,
     fitTo,
     popupHtml: (p) => `<b>${escapeHtml(p.name)}</b><br>${escapeHtml(costText(p))}`
-      + `${p.capacity ? `<br>${p.capacity} platser` : ''}${p.freeSpaces != null ? ` · ${p.freeSpaces} lediga` : ''}`
+      + `${p.capacity ? `<br>${p.capacity} platser` : p.capacityEst ? `<br>ca ${p.capacityEst} platser (uppskattat från ytan)` : ''}${p.freeSpaces != null ? ` · ${p.freeSpaces} lediga` : ''}`
+      + `${p.geomEst ? '<br><small>Streckad yta = ungefärligt läge och storlek</small>' : ''}`
       + `<br>${formatDistance(p.distance)} från målet`
-      + `<br><a href="${navUrl(settings.navApp, p.lat, p.lon, p.name)}" target="_blank" rel="noopener">Kör hit</a>`,
+      + `<br><a href="${navUrl(settings.navApp, p.lat, p.lon, p.name)}" target="_blank" rel="noopener">Kör hit</a>`
+      + ` · <a class="report" href="${escapeHtml(reportLink(p))}" target="_blank" rel="noopener">Rapportera fel</a>`,
   });
 }
 
@@ -542,8 +549,10 @@ $('copyCode').addEventListener('click', async () => {
 });
 
 // ---------- Dela ----------
+let snapshotAvailable = false;
+loadSnapshot().then((snap) => { snapshotAvailable = Boolean(snap); });
 function paintShare() {
-  const proxy = hasProxy();
+  const proxy = hasProxy() || snapshotAvailable;
   $('shareKeyRow').hidden = proxy || !settings.appId;
   $('shareState').textContent = proxy
     ? 'Dina vänner får Göteborgs data automatiskt.'
@@ -553,7 +562,7 @@ function paintShare() {
 }
 $('shareBtn').addEventListener('click', async () => {
   const base = location.href.split('#')[0];
-  const url = shareUrl(base, !hasProxy() && $('shareKey').checked ? settings.appId : '');
+  const url = shareUrl(base, !hasProxy() && !snapshotAvailable && $('shareKey').checked ? settings.appId : '');
   const text = 'Parkera – hitta närmaste parkering och gratisparkering i Göteborg';
   try {
     if (navigator.share) { await navigator.share({ title: 'Parkera', text, url }); return; }
@@ -617,6 +626,9 @@ function setGbgState([msg, cls]) {
   el.textContent = msg;
   el.className = 'hint ' + (cls || '');
 }
+loadSnapshot().then((snap) => {
+  if (snap) setGbgState([`Göteborgs data: uppdaterad ${new Date(snap.generated).toLocaleDateString('sv-SE', { day: 'numeric', month: 'short' })} – ingen egen nyckel behövs.`, 'ok']);
+});
 if (hasProxy()) setGbgState(['Göteborgs data hämtas via Parkeras server – ingen egen nyckel behövs.', 'ok']);
 else if (settings.appId) setGbgState(['Nyckel sparad. Tryck "Testa" för att kontrollera den.', '']);
 

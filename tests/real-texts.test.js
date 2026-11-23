@@ -129,3 +129,16 @@ test('Vanliga texter fungerar fortfarande', () => {
   assert.equal(ok({ fee: 'free', extra: 'P-förbud måndagar klockan 08.00 - 10.00.' }, at(2026, 11, 23, 7, 30), 60), false);
   assert.equal(ok({ fee: 'free', extra: 'P-förbud onsdagar klockan 02.00 - 07.00.' }, at(2026, 11, 25, 1), 120), false);
 });
+
+test('Nordhemsskolan: tillstånd i prisfältet, pris i ExtraInfo (verklig post)', async () => {
+  const { fromGbg } = await import('../core.js');
+  const p = fromGbg({ Id: '792', Name: 'Nordhemsskolan', Owner: 'Göteborgs Stads Parkering',
+    ParkingCost: 'P-tillstånd erfordras helgfri mån-fre 07-17.',
+    ExtraInfo: '10 kr/tim alla dagar 08-22. Övrig tid 2 kr/tim.',
+    Lat: 57.69434, Long: 11.94924, WKT: 'POINT (11.94924 57.69434)' }, 'private');
+  assert.equal(evaluate(p, at(2026, 11, 23, 11, 56), 30).reason, 'kräver tillstånd', 'måndag 11:56');
+  const evening = evaluate(p, at(2026, 11, 23, 18), 60);
+  assert.equal(evening.ok, true, 'måndag 18: öppet för alla');
+  assert.equal(evening.cost, 10, 'priset hämtas ur ExtraInfo');
+  assert.equal(evaluate(p, at(2026, 11, 22, 12), 60).ok, true, 'söndag');
+});

@@ -124,3 +124,38 @@ test('P-hus utan form i Göteborgs data får formen från OSM-ytan den ligger i'
   assert.equal(out.length, 2);
   assert.equal(out[1].geom, null);
 });
+
+import { addEstimates } from '../core.js';
+import { distToAreaM, areaM2, circlePolygon } from '../geometry.js';
+
+test('Avstånd till ytans kant, yta i m² och uppskattningar', () => {
+  // 100 m x ~100 m ruta
+  const d = 1 / 111320;
+  const k = 1 / (111320 * Math.cos((57.7 * Math.PI) / 180));
+  const sq = { type: 'Polygon', coordinates: [[[11.97, 57.7], [11.97 + 100 * k, 57.7], [11.97 + 100 * k, 57.7 + 100 * d], [11.97, 57.7 + 100 * d], [11.97, 57.7]]] };
+  assert.ok(Math.abs(areaM2(sq) - 10000) < 50, `${areaM2(sq)}`);
+  assert.equal(distToAreaM(11.97 + 50 * k, 57.7 + 50 * d, sq), 0);
+  assert.ok(Math.abs(distToAreaM(11.97 + 50 * k, 57.7 - 20 * d, sq) - 20) < 0.5);
+  // Markparkering utan antal -> ca 400 platser
+  assert.equal(addEstimates({ kind: 'Parkering', geom: sq, capacity: null }).capacityEst, 400);
+  // P-hus får ingen ytbaserad uppskattning (flera våningar)
+  assert.equal(addEstimates({ kind: 'Parkeringshus', geom: sq, capacity: null }).capacityEst, undefined);
+  // Punkt utan form -> streckad uppskattad yta efter antal platser
+  const est = addEstimates({ kind: 'Parkeringshus / anläggning', lat: 57.7, lon: 11.97, geom: { type: 'Point', coordinates: [11.97, 57.7] }, capacity: 56 });
+  assert.equal(est.geomEst, true);
+  assert.ok(Math.abs(areaM2(est.geom) - 56 * 25) < 60);
+  assert.equal(circlePolygon(11.97, 57.7, 10).coordinates[0].length, 29);
+});
+
+test('Göteborgs punkt vid infarten (utanför ytan) lånar OSM-ytan inom 35 m', () => {
+  const d = 1 / 111320;
+  const k = 1 / (111320 * Math.cos((57.7 * Math.PI) / 180));
+  const ring = [[0, 0], [60, 0], [60, 40], [0, 40], [0, 0]].map(([x, y]) => ({ lon: 11.97 + x * k, lat: 57.7 + y * d }));
+  const osm = fromOsm({ type: 'way', id: 5, tags: { amenity: 'parking', fee: 'yes' }, geometry: ring });
+  const gbg = fromGbg({ Id: 'E', Name: 'Infarten', ParkingSpaces: 40, ParkingCost: '20 kr/tim', Lat: 57.7 - 15 * d, Long: 11.97 + 30 * k }, 'private');
+  const list = prepare([osm, gbg], { lat: 57.7, lon: 11.97 });
+  assert.equal(list.length, 1);
+  assert.equal(list[0].name, 'Infarten');
+  assert.equal(list[0].geomEst, undefined, 'riktig form, inte uppskattad');
+  assert.equal(list[0].geom.type, 'Polygon');
+});

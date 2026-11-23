@@ -198,3 +198,60 @@ export function pointInGeom(lon, lat, geom) {
 }
 export const isArea = (g) => Boolean(g) && (g.type === 'Polygon' || g.type === 'MultiPolygon');
 export const hasShape = (g) => Boolean(g) && g.type !== 'Point';
+
+// ---------- Mått i meter (lokal plan projektion, räcker inom en stad) ----------
+const M_PER_DEG = 111320;
+function toXY(lon, lat, lat0) {
+  return [lon * M_PER_DEG * Math.cos((lat0 * Math.PI) / 180), lat * M_PER_DEG];
+}
+function rings(geom) {
+  if (!geom) return [];
+  if (geom.type === 'Polygon') return [geom.coordinates[0]];
+  if (geom.type === 'MultiPolygon') return geom.coordinates.map((p) => p[0]);
+  if (geom.type === 'GeometryCollection') return geom.geometries.flatMap(rings);
+  return [];
+}
+// Kortaste avstånd (m) från en punkt till en ytas kant (0 om punkten ligger inuti)
+export function distToAreaM(lon, lat, geom) {
+  if (pointInGeom(lon, lat, geom)) return 0;
+  const [px, py] = toXY(lon, lat, lat);
+  let best = Infinity;
+  for (const ring of rings(geom)) {
+    for (let i = 1; i < ring.length; i++) {
+      const [ax, ay] = toXY(ring[i - 1][0], ring[i - 1][1], lat);
+      const [bx, by] = toXY(ring[i][0], ring[i][1], lat);
+      const dx = bx - ax, dy = by - ay;
+      const len2 = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
+      best = Math.min(best, Math.hypot(px - (ax + t * dx), py - (ay + t * dy)));
+    }
+  }
+  return best;
+}
+// Yta i m² (shoelace i lokal projektion)
+export function areaM2(geom) {
+  let total = 0;
+  for (const ring of rings(geom)) {
+    const lat0 = ring[0][1];
+    let a = 0;
+    for (let i = 1; i < ring.length; i++) {
+      const [x1, y1] = toXY(ring[i - 1][0], ring[i - 1][1], lat0);
+      const [x2, y2] = toXY(ring[i][0], ring[i][1], lat0);
+      a += x1 * y2 - x2 * y1;
+    }
+    total += Math.abs(a) / 2;
+  }
+  return total;
+}
+// Ungefärlig yta som cirkel – används när ingen källa har formen
+export function circlePolygon(lon, lat, radiusM, segments = 28) {
+  const ring = [];
+  const kx = M_PER_DEG * Math.cos((lat * Math.PI) / 180);
+  for (let i = 0; i <= segments; i++) {
+    const a = (i / segments) * 2 * Math.PI;
+    ring.push([lon + (radiusM * Math.cos(a)) / kx, lat + (radiusM * Math.sin(a)) / M_PER_DEG]);
+  }
+  return { type: 'Polygon', coordinates: [ring] };
+}
+// Ca 25 m² per bil på en markparkering, inklusive körytor
+export const M2_PER_SPACE = 25;
