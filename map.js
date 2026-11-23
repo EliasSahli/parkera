@@ -9,6 +9,7 @@ let markers = [];
 let destMarker = null;
 let pending = null;
 let onPick = null;
+let overlayReady = false; // sant när vår datakälla finns i kartan
 
 const darkQuery = matchMedia('(prefers-color-scheme: dark)');
 const isDark = () => darkQuery.matches;
@@ -34,7 +35,7 @@ async function loadBaseStyle() {
 }
 
 function addOverlayLayers() {
-  if (map.getSource(AREA_SRC)) return;
+  if (map.getSource(AREA_SRC)) { overlayReady = true; return; }
   const dark = isDark();
   const color = ['match', ['get', 'cls'],
     'free', dark ? AREA_COLORS.freeDark : AREA_COLORS.free,
@@ -74,6 +75,7 @@ function addOverlayLayers() {
       'line-opacity': ['case', ['==', ['get', 'focus'], true], 0.8, ['==', ['get', 'fits'], true], 0.55, 0.3],
     },
   });
+  overlayReady = true;
   for (const id of ['parkera-fill', 'parkera-strip']) {
     map.on('click', id, (e) => {
       const f = e.features?.[0];
@@ -106,6 +108,7 @@ export function initMap(container, { onSelect } = {}) {
     });
     // Följ telefonens ljust/mörkt läge
     darkQuery.addEventListener('change', () => {
+      overlayReady = false;
       map.setStyle(appleStyle(baseStyle, isDark()));
       map.once('styledata', () => {
         addOverlayLayers();
@@ -131,7 +134,10 @@ function pinEl(cls, text, title) {
 // data: { dest, parkings: [{p, cls, label, fits, focus}], fitTo: [[lon,lat],...] , popupHtml(p) }
 export function updateMap(data) {
   lastData = data;
-  if (!map || !map.isStyleLoaded() || !map.getSource(AREA_SRC)) { pending = data; return; }
+  // OBS: map.isStyleLoaded() är falskt en stund efter varje setData, så den kan inte användas
+  // som spärr – då fastnade snabba uppdateringar (en per Göteborgslista) och konturerna försvann.
+  if (!map || !overlayReady || !map.getSource(AREA_SRC)) { pending = data; return; }
+  pending = null;
   const { dest, parkings, fitTo, popupHtml } = data;
 
   // Ytor
