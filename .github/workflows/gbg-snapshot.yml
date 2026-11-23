@@ -6,6 +6,12 @@ on:
   schedule:
     - cron: '17 2 * * *' # 03:17 svensk vintertid
   workflow_dispatch: {}
+  # Kör också direkt när jobbet eller skriptet ändras (datan själv triggar inte, så ingen loop)
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/gbg-snapshot.yml'
+      - 'scripts/build-gbg-snapshot.mjs'
 
 permissions:
   contents: write
