@@ -159,7 +159,8 @@ export function borrowShapes(parkings) {
   const areas = parkings.filter((p) => p && p.source === 'osm' && isArea(p.geom));
   const used = new Set();
   const out = parkings.filter(Boolean).map((p) => {
-    if (p.source !== 'gbg' || hasShape(p.geom)) return p;
+    if (p.source === 'curated' && p.osmId) used.add(p.osmId); // samma anläggning som OSM-ytan
+    if ((p.source !== 'gbg' && p.source !== 'curated') || hasShape(p.geom)) return p;
     // Punkten inuti en yta, annars närmaste yta vars kant ligger inom 35 m (t.ex. punkt vid infarten)
     let area = areas.find((a) => !used.has(a.id) && pointInGeom(p.lon, p.lat, a.geom));
     if (!area) {

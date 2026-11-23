@@ -416,6 +416,7 @@ export function evaluate(p, start, durMin) {
       cost = inSeasonAny(feeSeason, start, durMin) ? Math.round((p.currentRate * durMin) / 60) : 0;
       approx = true;
     }
+    if (p.priceFrom) approx = true; // operatörens "från"-pris
     return { ok: true, reason: '', cost, approx, note };
   }
   return { ok: true, reason: '', cost: null, approx: false };

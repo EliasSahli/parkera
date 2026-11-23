@@ -6,11 +6,12 @@ import {
 import { evaluate, fmtDuration } from './rules.js';
 import { initMap, updateMap, openPopupFor } from './map.js';
 import {
-  geocode, suggest, reverseGeocode, fetchOsmParkings, fetchGbgParkings, testGbgKey, hasProxy, loadSnapshot,
+  geocode, suggest, reverseGeocode, fetchOsmParkings, fetchGbgParkings, testGbgKey, hasProxy, loadSnapshot, fetchCurated,
+  gbgCoverage,
 } from './sources.js';
 
 const $ = (id) => document.getElementById(id);
-const APP_VERSION = '0.8.1';
+const APP_VERSION = '0.9.0';
 const reportLink = (p) => reportUrl(p, { dur: state.dur, arrival: arrival().toLocaleString('sv-SE'), version: APP_VERSION });
 
 // ---------- Inställningar (lagras lokalt i webbläsaren) ----------
@@ -222,13 +223,19 @@ async function chooseDest(dest) {
   status(dest.isHere ? 'Letar parkeringar runt dig…' : 'Letar parkeringar runt ' + dest.label + '…', { spin: true });
 
   const radius = Number(settings.radius) || 1500;
-  const parts = { osm: null, gbg: null };
+  const parts = { osm: null, gbg: null, cur: null };
+  $('coverage').hidden = true;
+  gbgCoverage(dest.lat, dest.lon).then((covered) => {
+    if (req === state.req) $('coverage').hidden = covered !== false;
+  });
   let pending = 2;
   let errors = 0;
 
+  fetchCurated(dest.lat, dest.lon, radius).then((items) => { parts.cur = items; if (items.length) merge(); });
+
   const merge = () => {
     if (req !== state.req) return; // användaren har hunnit söka något annat
-    state.all = prepare([...(parts.osm || []), ...(parts.gbg || [])], dest);
+    state.all = prepare([...(parts.osm || []), ...(parts.gbg || []), ...(parts.cur || [])], dest);
     state.loading = pending > 0;
     if (state.all.length || pending === 0) render();
     if (pending > 0) status(state.all.length ? 'Hämtar fler parkeringar…' : 'Letar parkeringar runt ' + dest.label + '…', { spin: true });
@@ -408,8 +415,10 @@ function renderList() {
       p.gbgKind === 'private' ? '<span class="tag kind">P-hus / anläggning</span>' : '',
       p.gbgKind === 'commuter' ? '<span class="tag kind">Pendelparkering</span>' : '',
       p.source === 'gbg' ? '<span class="tag gbg">Göteborgs Stad</span>' : '',
+      p.source === 'curated' ? '<span class="tag kind">Handplockad</span>' : '',
     ].join('');
     const notes = [p.extra, p.restriction].filter(Boolean).map((t) => `<div class="m">${escapeHtml(t)}</div>`).join('')
+      + (p.source === 'curated' && p.sourceUrl ? `<div class="m">Pris från <a href="${escapeHtml(p.sourceUrl)}" target="_blank" rel="noopener">operatören</a>, kollat ${escapeHtml(p.checked || '')} – kan ha ändrats</div>` : '')
       + `<div class="m"><a class="report" href="${escapeHtml(reportLink(p))}" target="_blank" rel="noopener">Rapportera fel</a></div>`;
     const cap = p.capacity ? ` · ${p.capacity} platser` : p.capacityEst ? ` · ca ${p.capacityEst} platser` : '';
     li.innerHTML = `<div>

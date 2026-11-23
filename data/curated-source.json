@@ -1,0 +1,109 @@
+{
+  "_info": "Handplockade anläggningar i kranskommunerna. Redigeras för hand. Nattjobbet (scripts/build-curated.mjs) letar upp varje post i OpenStreetMap (osmName inom kommunen, annars adress) och skriver data/curated.json. Priser från operatörens sida är ofta 'från'-priser och visas därför som ungefärliga.",
+  "items": [
+    {
+      "id": "allum",
+      "name": "Allum",
+      "municipality": "Partille kommun",
+      "osmName": "Allum",
+      "operator": "Apcoa",
+      "spaces": 1647,
+      "price": "7 kr/tim alla dagar 06-21. Maxpris 150 kr/dygn.",
+      "hours": "Öppet dygnet runt",
+      "priceFrom": true,
+      "source": "https://www.apcoa.se/en/find-a-car-park/car-parking/partille/allum/slottskullen",
+      "checked": "2026-11-23"
+    },
+    {
+      "id": "partille-port",
+      "name": "Partille Port",
+      "municipality": "Partille kommun",
+      "osmName": "Partille Port",
+      "operator": "Apcoa",
+      "spaces": 672,
+      "price": "5 kr/tim alla dagar 00-24.",
+      "hours": "Öppet dygnet runt",
+      "priceFrom": true,
+      "source": "https://www.apcoa.se/en/find-a-car-park/car-parking/partille",
+      "checked": "2026-11-23"
+    },
+    {
+      "id": "brodalen",
+      "name": "Brodalen",
+      "municipality": "Partille kommun",
+      "osmName": "Brodalen",
+      "operator": "Apcoa",
+      "spaces": 205,
+      "price": "7 kr/tim alla dagar 00-24.",
+      "hours": "Öppet dygnet runt",
+      "priceFrom": true,
+      "source": "https://www.apcoa.se/en/find-a-car-park/car-parking/partille",
+      "checked": "2026-11-23"
+    },
+    {
+      "id": "lackareback",
+      "name": "Lackarebäck",
+      "municipality": "Mölndals kommun",
+      "osmName": "Lackarebäck",
+      "operator": "Apcoa",
+      "spaces": 150,
+      "price": "10 kr/tim alla dagar 00-24.",
+      "hours": "Öppet dygnet runt",
+      "priceFrom": true,
+      "source": "https://www.apcoa.se/en/find-a-car-park/car-parking/moelndal",
+      "checked": "2026-11-23"
+    },
+    {
+      "id": "molndal-polishuset",
+      "name": "Polishuset",
+      "municipality": "Mölndals kommun",
+      "osmName": "Polishuset|Polisen",
+      "operator": "Apcoa",
+      "spaces": 100,
+      "price": "8 kr/15 min alla dagar 00-24.",
+      "hours": "Öppet dygnet runt",
+      "priceFrom": true,
+      "source": "https://www.apcoa.se/en/find-a-car-park/car-parking/moelndal",
+      "checked": "2026-11-23"
+    },
+    {
+      "id": "sodra-porten",
+      "name": "Parkeringshus Södra porten",
+      "municipality": "Mölndals kommun",
+      "osmName": "Södra port",
+      "operator": "Apcoa",
+      "spaces": 40,
+      "price": "10 kr/45 min alla dagar 00-24.",
+      "hours": "Öppet dygnet runt",
+      "priceFrom": true,
+      "source": "https://www.apcoa.se/en/find-a-car-park/car-parking/moelndal",
+      "checked": "2026-11-23"
+    },
+    {
+      "id": "norra-agatan-32",
+      "name": "Norra Ågatan 32",
+      "municipality": "Mölndals kommun",
+      "address": "Norra Ågatan 32, Mölndal",
+      "operator": "Apcoa",
+      "spaces": 100,
+      "price": "8 kr/tim alla dagar 00-24.",
+      "hours": "Öppet dygnet runt",
+      "priceFrom": true,
+      "source": "https://www.apcoa.se/en/find-a-car-park/car-parking/moelndal",
+      "checked": "2026-11-23"
+    },
+    {
+      "id": "goteborgsvagen-44",
+      "name": "Göteborgsvägen 44",
+      "municipality": "Mölndals kommun",
+      "address": "Göteborgsvägen 44, Mölndal",
+      "operator": "Apcoa",
+      "spaces": 50,
+      "price": "5 kr/tim alla dagar 00-24.",
+      "hours": "Öppet dygnet runt",
+      "priceFrom": true,
+      "source": "https://www.apcoa.se/en/find-a-car-park/car-parking/moelndal",
+      "checked": "2026-11-23"
+    }
+  ]
+}

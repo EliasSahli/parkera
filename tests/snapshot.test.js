@@ -30,3 +30,35 @@ test('Ögonblicksbild: alla listor tolkas, nyckeln hamnar inte i filen', async (
   assert.equal(snap.items.find((i) => i.name === 'Nordhemsskolan').fee, 'paid');
   assert.ok(Date.parse(snap.generated) > 0);
 }, { timeout: 30000 });
+
+import { cellKey, cellsForRadius, splitIntoCells } from '../tiles.js';
+import { haversine } from '../core.js';
+import { readFileSync, existsSync, mkdtempSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+test('Rutor: en sökning hittar exakt samma platser som hela filen', async () => {
+  const path = new URL('../data/gbg.json', import.meta.url);
+  if (!existsSync(path)) return; // riktig data finns bara lokalt/efter nattjobbet
+  const all = JSON.parse(readFileSync(path, 'utf8')).items;
+  const cells = splitIntoCells(all);
+  for (const [lat, lon, r] of [[57.7089, 11.9746, 1500], [57.6997, 11.9759, 2500], [57.7180, 11.9440, 1000], [57.6500, 11.9100, 1500]]) {
+    const direct = all.filter((p) => haversine(lat, lon, p.lat, p.lon) <= r).map((p) => p.id).sort();
+    const viaCells = cellsForRadius(lat, lon, r).flatMap((k) => cells[k] || []).filter((p) => haversine(lat, lon, p.lat, p.lon) <= r).map((p) => p.id).sort();
+    assert.deepEqual(viaCells, direct, `${lat},${lon}`);
+  }
+  // Största rutan ska vara betydligt mindre än hela filen
+  const biggest = Math.max(...Object.values(cells).map((c) => JSON.stringify(c).length));
+  assert.ok(biggest < JSON.stringify(all).length / 5, `största ruta ${biggest} byte`);
+});
+
+test('Rutor skrivs med index', async () => {
+  const { writeSnapshot } = await import('../scripts/build-gbg-snapshot.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'gbg-'));
+  const items = [{ id: 'a', lat: 57.70, lon: 11.97 }, { id: 'b', lat: 57.71, lon: 11.98 }, { id: 'c', lat: 57.80, lon: 12.10 }];
+  const index = await writeSnapshot({ generated: '2026-11-23T00:00:00Z', counts: {}, reused: [], items }, pathToFileURL(dir + '/'));
+  assert.equal(Object.values(index.cells).reduce((a, b) => a + b, 0), 3);
+  assert.ok(readdirSync(dir).includes('index.json'));
+  assert.ok(readdirSync(dir).includes(`${cellKey(57.70, 11.97)}.json`));
+});

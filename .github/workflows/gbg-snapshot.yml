@@ -1,4 +1,4 @@
-# Hämtar Göteborgs Stads parkeringsdata varje natt och sparar den som data/gbg.json.
+# Hämtar Göteborgs Stads parkeringsdata varje natt och sparar den i data/gbg/ (uppdelad i rutor) samt bygger data/curated.json.
 # Kräver repository secret GBG_APPID (Settings → Secrets and variables → Actions).
 name: Göteborgsdata (nattlig)
 
@@ -14,6 +14,9 @@ on:
       - 'scripts/build-gbg-snapshot.mjs'
       - 'core.js'
       - 'geometry.js'
+      - 'tiles.js'
+      - 'scripts/build-curated.mjs'
+      - 'data/curated-source.json'
 
 permissions:
   contents: write
@@ -43,12 +46,17 @@ jobs:
           fi
           node scripts/build-gbg-snapshot.mjs
 
+      # Kranskommunerna: slår upp de handplockade anläggningarna i OpenStreetMap (ingen nyckel behövs)
+      - name: Handplockade anläggningar
+        continue-on-error: true
+        run: node scripts/build-curated.mjs
+
       - name: Spara om datan ändrats
         id: commit
         run: |
           git config user.name "parkera-bot"
           git config user.email "parkera-bot@users.noreply.github.com"
-          git add data/gbg.json 2>/dev/null || true
+          git add -A data/ 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "Ingen förändring."

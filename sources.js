@@ -1,6 +1,7 @@
 // sources.js – hämtar data från nätet (körs i webbläsaren)
 import { fromOsm, fromGbg, buildOverpassQuery, haversine } from './core.js';
 import { PROXY_URL } from './config.js';
+import { cellsForRadius } from './tiles.js';
 
 // Göteborgsområdet – styr adressökningen hit
 const GBG_VIEWBOX = '11.70,57.85,12.25,57.55'; // väst,nord,öst,syd
@@ -241,30 +242,60 @@ async function fetchViaProxy(lat, lon, radius) {
 
 // onPartial(items): anropas varje gång en lista har kommit, så att appen kan visa den direkt
 // i stället för att vänta på den långsammaste (pendelparkeringarna svarade inte vid test).
-// ---------- Nattlig ögonblicksbild (data/gbg.json, byggs av GitHub Actions) ----------
-// Hela Göteborgs data, färdigtolkad. Ingen nyckel behövs i webbläsaren och sökningen blir direkt.
+// ---------- Nattlig ögonblicksbild (data/gbg/, byggs av GitHub Actions) ----------
+// Göteborgs data, färdigtolkad och uppdelad i rutor (tiles.js). Ingen nyckel behövs i webbläsaren,
+// och telefonen laddar bara rutorna runt målet.
 const SNAPSHOT_MAX_AGE = 8 * 24 * 3600 * 1000;
 let snapshotPromise = null;
+const cellCache = new Map();
 export function loadSnapshot() {
   if (!snapshotPromise) {
-    snapshotPromise = fetch('data/gbg.json', { cache: 'no-cache' })
+    snapshotPromise = fetch('data/gbg/index.json', { cache: 'no-cache' })
       .then((r) => (r.ok ? r.json() : null))
-      .then((snap) => {
-        if (!snap || !Array.isArray(snap.items) || !snap.items.length) return null;
-        if (Date.now() - Date.parse(snap.generated) > SNAPSHOT_MAX_AGE) return null; // för gammal
-        return snap;
+      .then((index) => {
+        if (!index || !index.cells || !Object.keys(index.cells).length) return null;
+        if (Date.now() - Date.parse(index.generated) > SNAPSHOT_MAX_AGE) return null; // för gammal
+        return index;
       })
       .catch(() => null);
   }
   return snapshotPromise;
 }
+function loadCell(index, key) {
+  if (!index.cells[key]) return Promise.resolve([]);
+  if (!cellCache.has(key)) {
+    // datumet i adressen gör att en ny natts data inte fastnar i webbläsarens cache
+    const v = encodeURIComponent(index.generated);
+    cellCache.set(key, fetch(`data/gbg/${key}.json?v=${v}`).then((r) => (r.ok ? r.json() : [])).catch(() => []));
+  }
+  return cellCache.get(key);
+}
+// ---------- Handplockade anläggningar i kranskommunerna (data/curated.json) ----------
+let curatedPromise = null;
+export async function fetchCurated(lat, lon, radius) {
+  if (!curatedPromise) {
+    curatedPromise = fetch('data/curated.json', { cache: 'no-cache' })
+      .then((r) => (r.ok ? r.json() : { items: [] }))
+      .then((d) => d.items || [])
+      .catch(() => []);
+  }
+  return (await curatedPromise).filter((p) => haversine(lat, lon, p.lat, p.lon) <= radius + 60);
+}
+
+// Har Göteborgsdatan något i närheten? (styr skylten "begränsad data här")
+export async function gbgCoverage(lat, lon, radiusM = 1500) {
+  const index = await loadSnapshot();
+  if (!index) return null; // vet inte
+  return cellsForRadius(lat, lon, radiusM).some((k) => index.cells[k] > 0);
+}
 
 export async function fetchGbgParkings(appId, lat, lon, radius, onPartial = null) {
-  const snap = await loadSnapshot();
-  if (snap) {
-    const items = snap.items.filter((p) => haversine(lat, lon, p.lat, p.lon) <= radius + 60);
+  const index = await loadSnapshot();
+  if (index) {
+    const cells = await Promise.all(cellsForRadius(lat, lon, radius + 60).map((k) => loadCell(index, k)));
+    const items = cells.flat().filter((p) => haversine(lat, lon, p.lat, p.lon) <= radius + 60);
     if (onPartial) onPartial(items);
-    return { items, ok: true, reason: '', transport: 'snapshot', generated: snap.generated };
+    return { items, ok: true, reason: '', transport: 'snapshot', generated: index.generated };
   }
   if (PROXY_URL) {
     const key = `gbgp:${lat.toFixed(4)},${lon.toFixed(4)},${radius}`;
