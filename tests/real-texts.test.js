@@ -142,3 +142,41 @@ test('Nordhemsskolan: tillstånd i prisfältet, pris i ExtraInfo (verklig post)'
   assert.equal(evening.cost, 10, 'priset hämtas ur ExtraInfo');
   assert.equal(evaluate(p, at(2026, 11, 22, 12), 60).ok, true, 'söndag');
 });
+
+test('Massprov 23 nov: förkortade dagar, Max P-tid, fri parkering, stängt, 24:00:00', async () => {
+  const { parseDays, parseExtraRules } = await import('../rules.js');
+  const { fromGbg } = await import('../core.js');
+  assert.deepEqual([...parseDays('Må-Fr 17-22')].sort(), [1, 2, 3, 4, 5]);
+  assert.deepEqual([...parseDays('3 tim Lö-Sö 08-22')].sort(), [0, 6]);
+  assert.deepEqual([...parseDays('Fre-Lör 06.00-02.00')].sort(), [5, 6]);
+  assert.deepEqual([...parseDays('P-tillstånd erfordras helgfri Mån-Fre 07-17')].sort(), [1, 2, 3, 4, 5]);
+  assert.equal(parseDays('Storgatan 8-22'), null);
+  assert.equal(parseMaxStay('24:00:00'), 1440);
+
+  // Max P-tid i ExtraInfo, bara vardagar 10-18
+  const max = { fee: 'paid', price: '20 kr/tim alla dagar 08-22.', extra: 'Max P-tid 2 tim Mån-Fre 10-18.' };
+  assert.equal(evaluate(max, MON_W48, 180).reason, 'max 2 h');
+  assert.equal(ok(max, SUN, 180), true, 'söndag gäller inte maxtiden');
+  assert.equal(ok({ fee: 'paid', price: '20 kr/tim', extra: 'Del av plan 1, Max P-tid 2 tim. Öppet dygnet runt.' }, MON_W48, 180), false);
+
+  // Fri parkering första timmarna (med digital biljett), fortsättningsmening för helgen
+  const extra = 'Fri parkering 3 tim Må-Fr 17-22. 3 tim Lö-Sö 08-22. med digital biljett.';
+  const { freeRules } = parseExtraRules(extra);
+  assert.equal(freeRules.length, 2);
+  const fp = { fee: 'paid', price: '20 kr/tim alla dagar 08-22. Övrig tid 2 kr/tim.', extra };
+  const eve = evaluate(fp, at(2026, 11, 23, 18), 120);
+  assert.equal(eve.cost, 0, 'måndag 18, 2 h: inom de fria 3 h');
+  assert.match(eve.note, /första 3 h gratis med digital biljett/);
+  assert.equal(evaluate(fp, at(2026, 11, 23, 18), 300).cost, 22, '5 h från 18: 18–21 fritt, 21–22 à 20 kr, 22–23 à 2 kr');
+  assert.equal(evaluate(fp, MON_W48, 60).cost, 20, 'förmiddag: ingen fri period');
+  // "Fri kund" gäller bara kunder – ingen rabatt
+  assert.equal(evaluate({ fee: 'paid', price: '20 kr/tim alla dagar 08-22.', extra: 'Fri kund P-2 tim alla dagar 08-22 med biljett.' }, MON_W48, 60).cost, 20);
+
+  // Stängt p-hus nattetid
+  const closed = { fee: 'paid', price: '20 kr/tim', extra: 'P-huset är öppet alla dagar 05-24. OBS! P-hus stängt kl.00-05 och kan ej öppnas.' };
+  assert.equal(evaluate(closed, at(2026, 11, 23, 23), 180).reason, 'stängt 00.00–05.00');
+  assert.equal(ok(closed, MON_W48, 180), true);
+
+  // Anläggning helt utan pris -> okänd avgift (inte "avgift")
+  assert.equal(fromGbg({ Id: '129', Name: 'Slätten', Lat: 57.71, Long: 12.0 }, 'private').fee, 'unknown');
+});

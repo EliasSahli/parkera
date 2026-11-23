@@ -10,7 +10,7 @@ import {
 } from './sources.js';
 
 const $ = (id) => document.getElementById(id);
-const APP_VERSION = '0.8.0';
+const APP_VERSION = '0.8.1';
 const reportLink = (p) => reportUrl(p, { dur: state.dur, arrival: arrival().toLocaleString('sv-SE'), version: APP_VERSION });
 
 // ---------- Inställningar (lagras lokalt i webbläsaren) ----------
@@ -295,7 +295,7 @@ function costText(p) {
   if (!e) return feeLabel(p);
   if (!e.ok) return `Passar inte: ${e.reason}`;
   if (e.cost === 0) return `${d}: gratis`;
-  if (e.cost != null) return `${d}: ${e.approx ? 'ca ' : ''}${e.cost} kr`;
+  if (e.cost != null) return `${d}: ${e.approx ? 'ca ' : ''}${e.cost} kr${e.note ? ` (${e.note})` : ''}`;
   if (p.fee === 'paid') return 'Avgift (pris okänt)';
   return 'Avgift okänd';
 }

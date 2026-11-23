@@ -12,6 +12,8 @@ on:
     paths:
       - '.github/workflows/gbg-snapshot.yml'
       - 'scripts/build-gbg-snapshot.mjs'
+      - 'core.js'
+      - 'geometry.js'
 
 permissions:
   contents: write

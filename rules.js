@@ -72,11 +72,22 @@ const DAY_WORDS = [
   [/fredag/, [5]],
 ];
 
+const DAY_ABBR = [['sö', 0], ['må', 1], ['ti', 2], ['on', 3], ['to', 4], ['fr', 5], ['lö', 6]];
+const dayIdx = (w) => DAY_ABBR.find(([a]) => w.startsWith(a))?.[1];
+// "må-fr", "lö-sö", "fre-lör", "måndag-fredag" -> dagar (även över helgen, t.ex. fre-mån)
+const RANGE_RE = /(?<![a-zåäö])(må|mån|måndag|ti|tis|tisdag|on|ons|onsdag|to|tor|torsdag|fr|fre|fredag|lö|lör|lördag|sö|sön|söndag)(?:ar)?\s*[-–]\s*(må|mån|måndag|ti|tis|tisdag|on|ons|onsdag|to|tor|torsdag|fr|fre|fredag|lö|lör|lördag|sö|sön|söndag)(?:ar)?(?![a-zåäö])/g;
+
 // Text -> mängd veckodagar (0 = söndag). null = ingen dag nämnd (gäller alla dagar)
 export function parseDays(text) {
   // "vardag utom lördag klockan…" – undantaget räknas inte som dagar
-  const t = normalize(text).replace(/utom[^0-9]*?(?=klockan|kl\.|\d|$)/g, ' ');
+  let t = normalize(text).replace(/utom[^0-9]*?(?=klockan|kl\.|\d|$)/g, ' ');
   const days = new Set();
+  t = t.replace(RANGE_RE, (_, a, b) => {
+    let i = dayIdx(a);
+    const end = dayIdx(b);
+    for (let n = 0; n < 7; n++) { days.add(i); if (i === end) break; i = (i + 1) % 7; }
+    return ' ';
+  });
   let rest = t;
   for (const [re, ds] of DAY_WORDS) {
     if (re.test(rest)) {
@@ -174,6 +185,8 @@ export function parseMaxStay(text) {
   if (text == null || text === '') return null;
   const t = String(text).toLowerCase().replace(',', '.').trim();
   if (/^\d+(\.\d+)?$/.test(t)) return Math.round(Number(t) * 60); // bara siffra = timmar
+  const hms = /^(\d{1,3}):(\d{2})(?::\d{2})?$/.exec(t); // "24:00:00"
+  if (hms) return Number(hms[1]) * 60 + Number(hms[2]);
   const iso = /^p?t?(\d+)h$/i.exec(t.replace(/\s/g, ''));
   if (iso) return Number(iso[1]) * 60;
   let total = 0;
@@ -236,13 +249,14 @@ export function parseFeeSeason(text) {
 }
 
 // Kostnad för [start, start+durMin] i hela kronor, eller null om okänd.
-export function costFor(price, start, durMin, { feeSeason = null } = {}) {
+export function costFor(price, start, durMin, { feeSeason = null, freeFirst = 0 } = {}) {
   if (!price || price.capOnly) return null;
   let cost = 0;
   let block = 0;
   const t = new Date(start.getTime());
   t.setSeconds(0, 0);
   for (let m = 0; m < durMin; m++) {
+    if (m < freeFirst) { t.setMinutes(t.getMinutes() + 1); continue; }
     if (m > 0 && m % 1440 === 0) { cost += price.dayCap != null ? Math.min(block, price.dayCap) : block; block = 0; }
     if (inSeason(feeSeason, t)) {
       const rule = price.rules.find((r) => inRule(r, t));
@@ -262,10 +276,10 @@ export function parseBans(text) {
   const bans = [];
   let prevBan = false;
   for (const s of sentences(text)) {
-    const isBan = /p-förbud|parkeringsförbud|städ/i.test(s);
+    const isBan = /p-förbud|parkeringsförbud|städ|stängt|låst/i.test(s);
     const continues = prevBan && !/kr|avgift|tillstånd|max|högst|öppet/i.test(s) && parseWindow(stripMeta(s));
     if (isBan || continues) {
-      const r = makeRule(s);
+      const r = makeRule(s.replace(/kl\./gi, ' '), { closed: /stängt|låst/i.test(s) });
       if (r.hasWindow) bans.push(r);
       prevBan = true;
     } else {
@@ -309,6 +323,26 @@ export function parseLimits(text) {
   }
   return { windows, extraMax };
 }
+// ExtraInfo: "Max P-tid 2 tim Mån-Fre 10-18." och "Fri parkering 3 tim Må-Fr 17-22. 3 tim Lö-Sö 08-22. med digital biljett."
+// En mening som bara är "3 tim Lö-Sö 08-22" fortsätter föregående regel.
+export function parseExtraRules(text) {
+  const maxRules = [];
+  const freeRules = [];
+  let prev = null;
+  for (const s of sentences(text)) {
+    const max = /max\.?\s*p-tid:?\s*(\d+(?:[.,]\d+)?\s*(?:min|tim(?:mar|me)?|h|dygn|dagar|dag))(.*)$/i.exec(s);
+    const free = /fri\s+(kund\s+)?(?:parkering|p)-?\s*(\d+(?:[.,]\d+)?\s*(?:min|tim(?:mar|me)?|h))(.*)$/i.exec(s);
+    const cont = /^(\d+(?:[.,]\d+)?\s*(?:min|tim(?:mar|me)?|h))\s+(.*\d.*)$/i.exec(s);
+    if (max) { const r = makeRule(max[2]); maxRules.push({ minutes: parseMaxStay(max[1]), rule: r.hasWindow || r.days ? r : null }); prev = 'max'; }
+    else if (free) { if (!free[1]) freeRules.push({ minutes: parseMaxStay(free[2]), rule: makeRule(free[3]) }); prev = free[1] ? null : 'free'; }
+    else if (cont && prev) {
+      const r = makeRule(cont[2]);
+      (prev === 'max' ? maxRules : freeRules).push({ minutes: parseMaxStay(cont[1]), rule: r });
+    } else if (!/^med |^mot /i.test(s)) prev = null;
+  }
+  return { maxRules, freeRules };
+}
+
 // Bakåtkompatibelt: första fönstret
 export function limitWindow(text) {
   return parseLimits(text).windows[0] || null;
@@ -354,25 +388,35 @@ export function evaluate(p, start, durMin) {
     }
   }
 
+  const { maxRules, freeRules } = parseExtraRules(p.extra);
+  for (const x of maxRules) {
+    if (x.minutes != null && x.minutes < durMin && (!x.rule || ruleDuring([x.rule], start, durMin))) {
+      return fail(`max ${fmtDuration(x.minutes)}`);
+    }
+  }
+
   // Tillstånd / förhyrda platser
   const permit = ruleDuring(parsePermits(all), start, durMin);
   if (permit) return fail('kräver tillstånd');
 
   // P-förbud (med jämna/udda veckor och säsong)
   const ban = ruleDuring(parseBans(all), start, durMin);
-  if (ban) return fail(`P-förbud ${fmtMin(ban.from)}–${fmtMin(ban.to)}`);
+  if (ban) return fail(`${ban.closed ? 'stängt' : 'P-förbud'} ${fmtMin(ban.from)}–${fmtMin(ban.to)}`);
 
   if (p.fee === 'free') return { ok: true, reason: '', cost: 0, approx: false };
   if (p.fee === 'paid') {
     const feeSeason = parseFeeSeason(all);
     const parsed = parsePrice([p.price, p.extra, capText(all)].filter(Boolean).join('. '));
-    let cost = costFor(parsed, start, durMin, { feeSeason });
+    // "Fri parkering 3 tim Må-Fr 17-22 med digital biljett": första timmarna gratis om man kommer i fönstret
+    const free = freeRules.find((f) => f.minutes && inRule(f.rule, start));
+    let cost = costFor(parsed, start, durMin, { feeSeason, freeFirst: free ? free.minutes : 0 });
     let approx = false;
+    const note = free ? `första ${fmtDuration(free.minutes)} gratis${/biljett|app/i.test(p.extra) ? ' med digital biljett' : ''}` : '';
     if (cost == null && p.currentRate != null) {
       cost = inSeasonAny(feeSeason, start, durMin) ? Math.round((p.currentRate * durMin) / 60) : 0;
       approx = true;
     }
-    return { ok: true, reason: '', cost, approx };
+    return { ok: true, reason: '', cost, approx, note };
   }
   return { ok: true, reason: '', cost: null, approx: false };
 }

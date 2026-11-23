@@ -100,6 +100,7 @@ export function fromGbg(item, kind) {
   let fee;
   if (kind === 'time') fee = 'free';
   else if (kind === 'commuter') fee = feeFromText([priceText, item.ExtraInfo].filter(Boolean).join('. '));
+  else if (kind === 'private' && !priceText && !/kr|avgift/i.test(item.ExtraInfo || '')) fee = 'unknown'; // ingen prisuppgift alls
   else fee = feeFromText(priceText) === 'free' ? 'free' : 'paid';
   const defaultOwner = kind === 'private' ? null : 'Göteborgs Stad';
   return {
