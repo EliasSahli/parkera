@@ -1,4 +1,5 @@
 // Hämtar NOBIL:s laddstationer för Sverige, behåller Göteborgsregionen och sparar dem i rutor
+// Secret NOBIL_KEY tillagd 2026-11-25.
 // (data/nobil/). Körs av nattjobbet med nyckeln som GitHub-secret NOBIL_KEY – NOBIL:s villkor
 // tillåter inte att nyckeln eller API-svaren exponeras direkt i appen.
 //
