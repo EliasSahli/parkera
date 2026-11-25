@@ -12,7 +12,7 @@ import {
 } from './sources.js';
 
 const $ = (id) => document.getElementById(id);
-const APP_VERSION = '0.10.0';
+const APP_VERSION = '0.10.1';
 const reportLink = (p) => reportUrl(p, { dur: state.dur, arrival: arrival().toLocaleString('sv-SE'), version: APP_VERSION });
 
 // ---------- Inställningar (lagras lokalt i webbläsaren) ----------

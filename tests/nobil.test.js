@@ -49,7 +49,7 @@ test('NOBIL: laddare kopplas till parkeringen den står på, övriga blir egna',
   assert.equal(res.length, 2);
   assert.equal(res[0].charging.points, 3);
   assert.equal(res[1].evOnly, true);
-  assert.equal(res[1].fee, 'free');
+  assert.equal(res[1].fee, 'unknown'); // NOBIL:s avgiftsuppgift är inte pålitlig
   assert.ok(res[1].distance > 1000);
   assert.equal(attachChargers([parking], [], dest)[0], parking);
 });

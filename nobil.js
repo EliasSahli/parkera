@@ -133,9 +133,10 @@ export function attachChargers(parkings, chargers, dest) {
         distance: dest ? haversine(dest.lat, dest.lon, ch.lat, ch.lon) : 0,
         kind: 'Laddplats',
         evOnly: true,
-        fee: ch.parkingFee === false ? 'free' : ch.parkingFee === true ? 'paid' : 'unknown',
+        // NOBIL anger "ingen parkeringsavgift" för nästan alla stationer, även i innerstan – inte pålitligt
+        fee: ch.parkingFee === true ? 'paid' : 'unknown',
         charging: info,
-        extra: [ch.address, ch.location, ch.open24h === false ? 'Ej öppet dygnet runt' : ''].filter(Boolean).join(' · ') || null,
+        extra: [ch.address, ch.location, ch.open24h === false ? 'Ej öppet dygnet runt' : '', 'Kontrollera parkeringsavgift på skylten'].filter(Boolean).join(' · ') || null,
       });
     }
   }
