@@ -32,7 +32,7 @@ test('Proxy: hämtar båda listorna och lägger nyckeln i anropet, inte i svaret
   assert.equal(body.toll[0].PhoneParkingCode, '4115');
   assert.equal(body.private[0].Name, 'P-hus Nordstan');
   assert.equal(body.commuter[0].FreeSpaces, 12);
-  assert.equal(calls.length, 4);
+  assert.equal(calls.length, 5);
   assert.ok(calls.every((u) => u.includes('/hemlig-nyckel?')));
   assert.ok(!JSON.stringify(body).includes('hemlig'));
   assert.equal(res.headers.get('Access-Control-Allow-Origin'), 'https://eliassahli.github.io');
