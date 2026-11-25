@@ -17,6 +17,8 @@ on:
       - 'tiles.js'
       - 'scripts/build-curated.mjs'
       - 'data/curated-source.json'
+      - 'scripts/build-nobil.mjs'
+      - 'nobil.js'
 
 permissions:
   contents: write
@@ -47,6 +49,13 @@ jobs:
           node scripts/build-gbg-snapshot.mjs
 
       # Kranskommunerna: slår upp de handplockade anläggningarna i OpenStreetMap (ingen nyckel behövs)
+      # Laddplatser från NOBIL (secret NOBIL_KEY). Saknas den hoppas steget över.
+      - name: Laddplatser (NOBIL)
+        continue-on-error: true
+        env:
+          NOBIL_KEY: ${{ secrets.NOBIL_KEY }}
+        run: node scripts/build-nobil.mjs
+
       - name: Handplockade anläggningar
         continue-on-error: true
         run: node scripts/build-curated.mjs

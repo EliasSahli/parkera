@@ -270,6 +270,27 @@ function loadCell(index, key) {
   }
   return cellCache.get(key);
 }
+// ---------- Laddplatser från NOBIL (data/nobil/, byggs av nattjobbet) ----------
+// Samma rutsystem som Göteborgsdatan. Saknas filerna (ingen nyckel än) blir det bara en tom lista.
+let nobilIndex = null;
+const nobilCells = new Map();
+export async function fetchChargers(lat, lon, radius) {
+  if (!nobilIndex) {
+    nobilIndex = fetch('data/nobil/index.json', { cache: 'no-cache' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((i) => (i && i.cells && Object.keys(i.cells).length ? i : null))
+      .catch(() => null);
+  }
+  const index = await nobilIndex;
+  if (!index) return [];
+  const v = encodeURIComponent(index.generated);
+  const lists = await Promise.all(cellsForRadius(lat, lon, radius + 60).filter((k) => index.cells[k]).map((k) => {
+    if (!nobilCells.has(k)) nobilCells.set(k, fetch(`data/nobil/${k}.json?v=${v}`).then((r) => (r.ok ? r.json() : [])).catch(() => []));
+    return nobilCells.get(k);
+  }));
+  return lists.flat().filter((p) => haversine(lat, lon, p.lat, p.lon) <= radius + 60);
+}
+
 // ---------- Handplockade anläggningar i kranskommunerna (data/curated.json) ----------
 let curatedPromise = null;
 export async function fetchCurated(lat, lon, radius) {

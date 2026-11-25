@@ -5,13 +5,14 @@ import {
 } from './core.js';
 import { evaluate, fmtDuration } from './rules.js';
 import { initMap, updateMap, openPopupFor } from './map.js';
+import { attachChargers, chargingText } from './nobil.js';
 import {
-  geocode, suggest, reverseGeocode, fetchOsmParkings, fetchGbgParkings, testGbgKey, hasProxy, loadSnapshot, fetchCurated,
+  geocode, suggest, reverseGeocode, fetchOsmParkings, fetchGbgParkings, testGbgKey, hasProxy, loadSnapshot, fetchCurated, fetchChargers,
   gbgCoverage,
 } from './sources.js';
 
 const $ = (id) => document.getElementById(id);
-const APP_VERSION = '0.9.0';
+const APP_VERSION = '0.10.0';
 const reportLink = (p) => reportUrl(p, { dur: state.dur, arrival: arrival().toLocaleString('sv-SE'), version: APP_VERSION });
 
 // ---------- Inställningar (lagras lokalt i webbläsaren) ----------
@@ -48,6 +49,7 @@ const state = {
   fee: 'all',
   dur: store.get('dur', 120),
   onlyFits: store.get('onlyFits', true),
+  needCharge: store.get('needCharge', false),
   arriveIn: 0, // minuter från nu, eller null när en egen tid är vald
   arriveAt: null, // Date när en egen tid är vald
   req: 0,
@@ -223,7 +225,7 @@ async function chooseDest(dest) {
   status(dest.isHere ? 'Letar parkeringar runt dig…' : 'Letar parkeringar runt ' + dest.label + '…', { spin: true });
 
   const radius = Number(settings.radius) || 1500;
-  const parts = { osm: null, gbg: null, cur: null };
+  const parts = { osm: null, gbg: null, cur: null, ev: null };
   $('coverage').hidden = true;
   gbgCoverage(dest.lat, dest.lon).then((covered) => {
     if (req === state.req) $('coverage').hidden = covered !== false;
@@ -232,10 +234,15 @@ async function chooseDest(dest) {
   let errors = 0;
 
   fetchCurated(dest.lat, dest.lon, radius).then((items) => { parts.cur = items; if (items.length) merge(); });
+  fetchChargers(dest.lat, dest.lon, radius).then((items) => {
+    parts.ev = items;
+    $('nobilCredit').hidden = !items.length;
+    if (items.length) merge();
+  });
 
   const merge = () => {
     if (req !== state.req) return; // användaren har hunnit söka något annat
-    state.all = prepare([...(parts.osm || []), ...(parts.gbg || []), ...(parts.cur || [])], dest);
+    state.all = attachChargers(prepare([...(parts.osm || []), ...(parts.gbg || []), ...(parts.cur || [])], dest), parts.ev, dest);
     state.loading = pending > 0;
     if (state.all.length || pending === 0) render();
     if (pending > 0) status(state.all.length ? 'Hämtar fler parkeringar…' : 'Letar parkeringar runt ' + dest.label + '…', { spin: true });
@@ -315,13 +322,18 @@ function costClass(p) {
 }
 
 // ---------- Rendering ----------
+// Vill man ladda visas bara platser med laddare; annars döljs rena laddplatser (de är för elbilar)
+function base() {
+  return state.needCharge ? state.all.filter((p) => p.charging) : state.all.filter((p) => !p.evOnly);
+}
+
 function render() {
   const { dest, all } = state;
   evaluateAll();
   $('results').hidden = false;
   $('destLabel').textContent = destHeading();
 
-  const { nearest, nearestFree, nearestTitle } = pickOptions(all);
+  const { nearest, nearestFree, nearestTitle } = pickOptions(base());
   const wait = state.loading ? 'Söker…' : null;
   const opts = $('options');
   opts.innerHTML = '';
@@ -393,8 +405,8 @@ function currentFilter() {
 }
 
 function renderList() {
-  const items = applyFilters(state.all, currentFilter());
-  const hidden = state.onlyFits ? applyFilters(state.all, { ...currentFilter(), onlyFits: false }).length - items.length : 0;
+  const items = applyFilters(base(), currentFilter());
+  const hidden = state.onlyFits ? applyFilters(base(), { ...currentFilter(), onlyFits: false }).length - items.length : 0;
   $('hiddenCount').textContent = hidden > 0 ? `(${hidden} dolda)` : '';
   const ul = $('list');
   ul.innerHTML = '';
@@ -416,6 +428,7 @@ function renderList() {
       p.gbgKind === 'commuter' ? '<span class="tag kind">Pendelparkering</span>' : '',
       p.source === 'gbg' ? '<span class="tag gbg">Göteborgs Stad</span>' : '',
       p.source === 'curated' ? '<span class="tag kind">Handplockad</span>' : '',
+      p.charging ? `<span class="tag ev">${escapeHtml(chargingText(p.charging))}</span>` : '',
     ].join('');
     const notes = [p.extra, p.restriction].filter(Boolean).map((t) => `<div class="m">${escapeHtml(t)}</div>`).join('')
       + (p.source === 'curated' && p.sourceUrl ? `<div class="m">Pris från <a href="${escapeHtml(p.sourceUrl)}" target="_blank" rel="noopener">operatören</a>, kollat ${escapeHtml(p.checked || '')} – kan ha ändrats</div>` : '')
@@ -435,7 +448,7 @@ function renderMap(nearest, nearestFree) {
   ensureMap();
   const { dest } = state;
   const fitTo = [[dest.lon, dest.lat]];
-  const parkings = applyFilters(state.all, currentFilter()).slice(0, 80).map((p) => {
+  const parkings = applyFilters(base(), currentFilter()).slice(0, 80).map((p) => {
     const focus = p === nearest || p === nearestFree;
     const ok = fits(p);
     const free = ok && p.eval?.cost === 0;
@@ -445,7 +458,7 @@ function renderMap(nearest, nearestFree) {
       fits: ok,
       focus,
       cls: ok ? (free ? 'free' : p.fee) : 'nofit',
-      label: free ? '0' : 'P',
+      label: state.needCharge && p.charging ? '⚡' : free ? '0' : 'P',
     };
   });
   updateMap({
@@ -453,7 +466,7 @@ function renderMap(nearest, nearestFree) {
     parkings,
     fitTo,
     popupHtml: (p) => `<b>${escapeHtml(p.name)}</b><br>${escapeHtml(costText(p))}`
-      + `${p.capacity ? `<br>${p.capacity} platser` : p.capacityEst ? `<br>ca ${p.capacityEst} platser (uppskattat från ytan)` : ''}${p.freeSpaces != null ? ` · ${p.freeSpaces} lediga` : ''}`
+      + `${p.capacity ? `<br>${p.capacity} platser` : p.capacityEst ? `<br>ca ${p.capacityEst} platser (uppskattat från ytan)` : ''}${p.freeSpaces != null ? ` · ${p.freeSpaces} lediga` : ''}${p.charging ? `<br>${escapeHtml(chargingText(p.charging))}` : ''}`
       + `${p.geomEst ? '<br><small>Streckad yta = ungefärligt läge och storlek</small>' : ''}`
       + `<br>${formatDistance(p.distance)} från målet`
       + `<br><a href="${navUrl(settings.navApp, p.lat, p.lon, p.name)}" target="_blank" rel="noopener">Kör hit</a>`
@@ -586,7 +599,7 @@ $('shareBtn').addEventListener('click', async () => {
 const distVal = () => ($('distVal').textContent = formatDistance(state.maxDist));
 $('maxDist').value = state.maxDist;
 distVal();
-const refreshListAndMap = () => { if (state.dest) { renderList(); const o = pickOptions(state.all); renderMap(o.nearest, o.nearestFree); } };
+const refreshListAndMap = () => { if (state.dest) { renderList(); const o = pickOptions(base()); renderMap(o.nearest, o.nearestFree); } };
 $('maxDist').addEventListener('input', (e) => {
   state.maxDist = Number(e.target.value);
   store.set('maxDist', state.maxDist);
@@ -600,6 +613,12 @@ document.querySelectorAll('.seg button').forEach((b) =>
     refreshListAndMap();
   }),
 );
+$('needCharge').checked = state.needCharge;
+$('needCharge').addEventListener('change', (e) => {
+  state.needCharge = e.target.checked;
+  store.set('needCharge', state.needCharge);
+  if (state.dest) render();
+});
 $('onlyFits').checked = state.onlyFits;
 $('onlyFits').addEventListener('change', (e) => {
   state.onlyFits = e.target.checked;

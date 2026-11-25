@@ -35,6 +35,8 @@ Appen läser den filen först, så sökningen går direkt och ingen behöver en 
 Engångsinställning: repo → **Settings → Secrets and variables → Actions → New repository secret**,
 namn `GBG_APPID`, värde = din nyckel. Kör sedan jobbet en gång: **Actions → Göteborgsdata (nattlig) → Run workflow**.
 
+**Laddplatser (NOBIL):** lägg till en till secret med namnet `NOBIL_KEY` och din NOBIL-nyckel som värde. Nattjobbet hämtar då laddstationerna och sparar dem i `data/nobil/`. Enligt NOBIL:s villkor får nyckeln och API-anropen inte synas i appen, så appen läser bara de färdiga filerna. Datan är NOBIL by Enova, CC BY 4.0, och källraden visas i appens sidfot.
+
 ## Låt vänner använda Göteborgs data utan nyckel (äldre alternativ)
 Lägg upp den lilla servern i `worker/` (instruktioner i `worker/README.md`, ca 5 min, gratis)
 och sätt adressen i `config.js`. Tills dess: Dela-knappen under ⚙︎ kan ta med din nyckel i länken.
