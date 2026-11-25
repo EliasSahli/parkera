@@ -79,6 +79,7 @@ const GBG_KIND = {
   toll: { label: 'Avgiftsparkering', fallback: 'Avgiftsparkering' },
   private: { label: 'Parkeringshus / anläggning', fallback: 'Parkeringsanläggning' },
   commuter: { label: 'Pendelparkering', fallback: 'Pendelparkering' },
+  handicap: { label: 'Parkering för rörelsehindrade', fallback: 'Parkering för rörelsehindrade' },
 };
 
 // Avgiftsstatus ur fritext (pendelparkeringar m.fl.)
@@ -98,7 +99,7 @@ export function fromGbg(item, kind) {
   const priceText = item.ParkingCost || item.ParkingCharge ||
     (item.CurrentParkingCost != null && item.CurrentParkingCost !== '' ? `${item.CurrentParkingCost} kr/h` : null);
   let fee;
-  if (kind === 'time') fee = 'free';
+  if (kind === 'time' || kind === 'handicap') fee = 'free'; // rörelsehindrade: avgiftsfritt med tillstånd
   else if (kind === 'commuter') fee = feeFromText([priceText, item.ExtraInfo].filter(Boolean).join('. '));
   else if (kind === 'private' && !priceText && !/kr|avgift/i.test(item.ExtraInfo || '')) fee = 'unknown'; // ingen prisuppgift alls
   else fee = feeFromText(priceText) === 'free' ? 'free' : 'paid';
@@ -123,6 +124,7 @@ export function fromGbg(item, kind) {
     extra: item.ExtraInfo || null,
     restriction: item.MaxParkingTimeLimitation || null,
     geom: item.WKT ? toWgs84(parseWKT(item.WKT), lat, lon) : null,
+    ...(kind === 'handicap' ? { prh: true } : {}), // kräver parkeringstillstånd för rörelsehindrade
   };
 }
 

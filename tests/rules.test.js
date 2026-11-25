@@ -114,3 +114,12 @@ test('Fel från riktig data: "vardag utom dag före sön- och helgdag" och minut
   const p = parsePrice('34 kr/tim 8-22 alla dagar. Övrig tid: 2 kr/tim');
   assert.equal(costFor(p, new Date(2026, 10, 22, 20, 44), 480), 57);
 });
+
+test('Rörelsehindrade: tillståndstext stoppar inte PRH-platsen, maxtiden gäller', async () => {
+  const { evaluate } = await import('../rules.js');
+  const p = { fee: 'free', prh: true, maxStay: '24 tim', extra: 'Tillstånd krävs. Endast för rörelsehindrade.' };
+  const mon = new Date('2026-11-23T10:00:00+01:00');
+  assert.equal(evaluate(p, mon, 120).ok, true);
+  assert.equal(evaluate(p, mon, 26 * 60).ok, false);
+  assert.equal(evaluate({ ...p, prh: false }, mon, 120).ok, false);
+});

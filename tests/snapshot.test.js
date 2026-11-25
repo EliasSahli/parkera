@@ -7,6 +7,7 @@ const { buildSnapshot } = await import('../scripts/build-gbg-snapshot.mjs');
 const sample = {
   PublicTimeParkings: [{ Id: 'T1', Name: 'Vasagatan', MaxParkingTime: '2 tim', Lat: 57.7, Long: 11.97, WKT: 'LINESTRING (11.97 57.7, 11.971 57.7001)' }],
   PublicTollParkings: [{ Id: 'P1', Name: 'Storgatan', ParkingCost: '34 kr/tim 8-22 alla dagar. Övrig tid: 2 kr/tim', PhoneParkingCode: '801', Lat: 57.701, Long: 11.972, WKT: 'MULTILINESTRING ((11.972 57.701, 11.973 57.7012))' }],
+  HandicapParkings: [{ Id: 'H1', Name: 'Kungsgatan 12', ParkingSpaces: 2, MaxParkingTime: '24 tim', Lat: 57.705, Long: 11.966, WKT: 'POINT (11.966 57.705)' }],
   PrivateTollParkings: [{ Id: '792', Name: 'Nordhemsskolan', ParkingCost: 'P-tillstånd erfordras helgfri mån-fre 07-17.', ExtraInfo: '10 kr/tim alla dagar 08-22.', Lat: 57.69434, Long: 11.94924, WKT: 'POINT (11.94924 57.69434)' }],
 };
 const fakeFetch = (fail = []) => async (url) => {
@@ -20,6 +21,10 @@ test('Ögonblicksbild: alla listor tolkas, nyckeln hamnar inte i filen', async (
   assert.equal(snap.counts.time, 1);
   assert.equal(snap.counts.toll, 1);
   assert.equal(snap.counts.private, 1);
+  assert.equal(snap.counts.handicap, 1);
+  const h = snap.items.find((i) => i.gbgKind === 'handicap');
+  assert.equal(h.prh, true);
+  assert.equal(h.fee, 'free');
   assert.deepEqual(snap.reused, ['commuter'], 'pendellistan (serverfel) återanvänds från förra natten');
   assert.ok(snap.items.some((i) => i.name === 'Gamla pendel'));
   const json = JSON.stringify(snap);

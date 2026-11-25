@@ -12,7 +12,7 @@ import {
 } from './sources.js';
 
 const $ = (id) => document.getElementById(id);
-const APP_VERSION = '0.10.1';
+const APP_VERSION = '0.11.0';
 const reportLink = (p) => reportUrl(p, { dur: state.dur, arrival: arrival().toLocaleString('sv-SE'), version: APP_VERSION });
 
 // ---------- Inställningar (lagras lokalt i webbläsaren) ----------
@@ -50,6 +50,7 @@ const state = {
   dur: store.get('dur', 120),
   onlyFits: store.get('onlyFits', true),
   needCharge: store.get('needCharge', false),
+  prh: store.get('prh', false),
   arriveIn: 0, // minuter från nu, eller null när en egen tid är vald
   arriveAt: null, // Date när en egen tid är vald
   req: 0,
@@ -323,8 +324,10 @@ function costClass(p) {
 
 // ---------- Rendering ----------
 // Vill man ladda visas bara platser med laddare; annars döljs rena laddplatser (de är för elbilar)
+// Platser för rörelsehindrade visas bara för den som har tillstånd
 function base() {
-  return state.needCharge ? state.all.filter((p) => p.charging) : state.all.filter((p) => !p.evOnly);
+  const list = state.prh ? state.all : state.all.filter((p) => !p.prh);
+  return state.needCharge ? list.filter((p) => p.charging) : list.filter((p) => !p.evOnly);
 }
 
 function render() {
@@ -428,6 +431,7 @@ function renderList() {
       p.gbgKind === 'commuter' ? '<span class="tag kind">Pendelparkering</span>' : '',
       p.source === 'gbg' ? '<span class="tag gbg">Göteborgs Stad</span>' : '',
       p.source === 'curated' ? '<span class="tag kind">Handplockad</span>' : '',
+      p.prh ? '<span class="tag prh">♿ Rörelsehindrade</span>' : '',
       p.charging ? `<span class="tag ev">${escapeHtml(chargingText(p.charging))}</span>` : '',
     ].join('');
     const notes = [p.extra, p.restriction].filter(Boolean).map((t) => `<div class="m">${escapeHtml(t)}</div>`).join('')
@@ -458,7 +462,7 @@ function renderMap(nearest, nearestFree) {
       fits: ok,
       focus,
       cls: ok ? (free ? 'free' : p.fee) : 'nofit',
-      label: state.needCharge && p.charging ? '⚡' : free ? '0' : 'P',
+      label: state.needCharge && p.charging ? '⚡' : p.prh ? '♿' : free ? '0' : 'P',
     };
   });
   updateMap({
@@ -613,6 +617,12 @@ document.querySelectorAll('.seg button').forEach((b) =>
     refreshListAndMap();
   }),
 );
+$('prh').checked = state.prh;
+$('prh').addEventListener('change', (e) => {
+  state.prh = e.target.checked;
+  store.set('prh', state.prh);
+  if (state.dest) render();
+});
 $('needCharge').checked = state.needCharge;
 $('needCharge').addEventListener('change', (e) => {
   state.needCharge = e.target.checked;

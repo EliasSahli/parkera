@@ -1,6 +1,6 @@
 // Service worker: cachar bara appens egna filer så att den startar snabbt.
 // All data (adresser, parkeringar, karta) hämtas alltid färskt från nätet.
-const CACHE = 'parkera-v0.10.1';
+const CACHE = 'parkera-v0.11.0';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'core.js', 'sources.js', 'rules.js', 'config.js', 'geometry.js', 'tiles.js', 'nobil.js', 'map.js', 'mapstyle.js', 'manifest.webmanifest', 'icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {

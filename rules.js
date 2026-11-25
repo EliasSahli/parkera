@@ -397,7 +397,7 @@ export function evaluate(p, start, durMin) {
 
   // Tillstånd / förhyrda platser
   const permit = ruleDuring(parsePermits(all), start, durMin);
-  if (permit) return fail('kräver tillstånd');
+  if (permit && !p.prh) return fail('kräver tillstånd'); // PRH-platser: tillståndet är förutsättningen
 
   // P-förbud (med jämna/udda veckor och säsong)
   const ban = ruleDuring(parseBans(all), start, durMin);

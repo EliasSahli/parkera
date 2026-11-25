@@ -78,6 +78,7 @@ export default {
       toll: 'PublicTollParkings',
       private: 'PrivateTollParkings',
       commuter: 'CommuterParkings',
+      handicap: 'HandicapParkings',
     };
     const keys = Object.keys(lists);
     const results = await Promise.allSettled(keys.map((k) => get(lists[k])));

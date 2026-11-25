@@ -18,6 +18,7 @@ const LISTS = [
   ['PublicTollParkings', 'toll'],
   ['PrivateTollParkings', 'private'],
   ['CommuterParkings', 'commuter'],
+  ['HandicapParkings', 'handicap'],
 ];
 
 // Kortare fil: 5 decimaler (~1 m) och inga tomma fält
