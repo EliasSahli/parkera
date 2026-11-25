@@ -1,0 +1,1 @@
+[{"id":"nobil-55246","source":"nobil","name":"Kareby pendelparkering","lat":57.9023181,"lon":11.9290424,"address":"Rishammarvägen 115, Kareby","owner":"ChargeNode","location":"Gata","access":"public","parkingFee":false,"open24h":true,"timeLimit":false,"charging":{"points":2,"maxKw":22,"connectors":{"Typ 2":2}}}]

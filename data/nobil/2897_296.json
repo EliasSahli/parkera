@@ -1,0 +1,1 @@
+[{"id":"nobil-54794","source":"nobil","name":"Kode pendelparkering","lat":57.943996,"lon":11.855648,"address":"E6, Kodemotet 88, Kode","owner":"ChargeNode","location":"Gata","access":"public","parkingFee":false,"open24h":true,"timeLimit":false,"charging":{"points":6,"maxKw":11,"connectors":{"Typ 2":6}}}]

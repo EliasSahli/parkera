@@ -1,0 +1,1 @@
+[{"id":"nobil-81327","source":"nobil","name":"Publik laddning","lat":57.454359,"lon":12.110462,"address":"Natanaels Väg 15, Fjärås","owner":"Waybler Ab","location":"Gata","access":"public","parkingFee":false,"open24h":true,"timeLimit":false,"charging":{"points":2,"maxKw":11,"connectors":{"Typ 2":2}}}]

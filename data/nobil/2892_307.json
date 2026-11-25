@@ -1,0 +1,1 @@
+[{"id":"nobil-14435","source":"nobil","name":"Lillans Väg","lat":57.84162,"lon":12.2933,"address":"Lillans Väg 3, Gråbo","owner":"Vattenfall InCharge","location":"Gata","access":"public","parkingFee":false,"open24h":true,"timeLimit":false,"charging":{"points":2,"maxKw":22,"connectors":{"Typ 2":2}}}]

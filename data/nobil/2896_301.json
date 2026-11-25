@@ -1,0 +1,1 @@
+[{"id":"nobil-28238","source":"nobil","name":"Gulf Nol","lat":57.92212,"lon":12.066941,"address":"Alevägen 2, Nol","owner":"Gulf Nol","location":"Gata","access":"public","parkingFee":false,"open24h":true,"timeLimit":false,"charging":{"points":4,"maxKw":150,"connectors":{"CCS":4}}}]

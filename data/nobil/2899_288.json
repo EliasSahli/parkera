@@ -1,0 +1,1 @@
+[{"id":"nobil-82636","source":"nobil","name":"ICA Nordeviks","lat":57.9852122,"lon":11.5538832,"address":"Kroksdalsvägen, Skärhamn","owner":"ChargeNode","location":"Gata","access":"public","parkingFee":false,"open24h":true,"timeLimit":false,"charging":{"points":2,"maxKw":22,"connectors":{"Typ 2":2}}}]

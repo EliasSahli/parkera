@@ -1,0 +1,1 @@
+[{"id":"nobil-82444","source":"nobil","name":"Johannas väg 12, Hisings Kärra (BRF Fagerkulle)","lat":57.8058419,"lon":11.9799862,"address":"Johannas väg 12, Hisings Kärra","owner":"EBB Charge","location":"Gata","access":"public","parkingFee":false,"open24h":true,"timeLimit":false,"charging":{"points":4,"maxKw":22,"connectors":{"Typ 2":4}}}]

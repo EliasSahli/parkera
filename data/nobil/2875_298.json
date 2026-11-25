@@ -1,0 +1,1 @@
+[{"id":"nobil-68584","source":"nobil","name":"Säröhus Hotell","lat":57.5104915,"lon":11.9336307,"address":"Särö Utsiktsväg 2-8, Särö","owner":"ChargeNode","location":"Gata","access":"public","parkingFee":false,"open24h":true,"timeLimit":false,"charging":{"points":90,"maxKw":22,"connectors":{"Typ 2":90}}}]

@@ -1,0 +1,1 @@
+[{"id":"nobil-53554","source":"nobil","name":"Cafe Torpet","lat":58.0045703,"lon":12.2281491,"address":"Slittorp 300, Skepplanda","owner":"Milepost AB","location":"Parkering","access":"public","parkingFee":false,"open24h":true,"timeLimit":false,"charging":{"points":4,"maxKw":22,"connectors":{"Typ 2":4}}}]
